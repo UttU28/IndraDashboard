@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="theme-color" content="#070a12" />
+<link rel="icon" type="image/png" href="/static/favicon.png" />
+<title>Server Control</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #070a12;
+    --surface: rgba(14, 19, 31, .82);
+    --surface-solid: #0e131f;
+    --surface-raised: #151c2b;
+    --line: rgba(148, 163, 184, .12);
+    --line-bright: rgba(148, 163, 184, .22);
+    --text: #f4f7fb;
+    --text-soft: #c3ccda;
+    --muted: #77849a;
+    --up: #34d399;
+    --down: #fb7185;
+    --partial: #fbbf24;
+    --mon: #60a5fa;
+    --accent: #818cf8;
+    --accent-2: #22d3ee;
+    --radius: 18px;
+    --shadow: 0 22px 60px rgba(0, 0, 0, .28);
+  }
+  * { box-sizing: border-box; }
+  ::selection { background: rgba(129, 140, 248, .32); }
+  html { min-height: 100%; }
+  body {
+    min-height: 100vh;
+    margin: 0;
+    background:
+      radial-gradient(900px 500px at 12% -10%, rgba(79, 70, 229, .16), transparent 62%),
+      radial-gradient(800px 500px at 96% 4%, rgba(6, 182, 212, .09), transparent 58%),
+      var(--bg);
+    color: var(--text);
+    font: 14px/1.5 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    letter-spacing: -.01em;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .16;
+    background-image: linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: linear-gradient(to bottom, black, transparent 70%);
+  }
+  header {
+    position: sticky; top: 0; z-index: 10; min-height: 72px;
+    background: rgba(7, 10, 18, .76); backdrop-filter: blur(22px) saturate(140%);
+    border-bottom: 1px solid var(--line);
+    padding: 0 max(22px, calc((100vw - 1460px) / 2));
+    display: flex; align-items: center; gap: 24px;
+  }
+  .brand { display: flex; align-items: center; gap: 12px; min-width: max-content; }
+  .brand-icon {
+    width: 38px; height: 38px; border-radius: 11px; object-fit: cover;
+    box-shadow: 0 0 0 1px rgba(129,140,248,.28), 0 8px 28px rgba(79,70,229,.24);
+  }
+  .brand-copy { display: flex; flex-direction: column; line-height: 1.15; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 680; letter-spacing: -.02em; }
+  .eyebrow { color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .14em; margin-top: 4px; }
+  .counts { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; }
+  .counts span {
+    display: flex; align-items: center; gap: 6px; padding: 6px 10px;
+    border-radius: 999px; background: rgba(255,255,255,.025); border: 1px solid var(--line);
+  }
+  .counts b { color: var(--text-soft); font-variant-numeric: tabular-nums; }
+  .counts span:nth-child(1) b { color: var(--up); }
+  .counts span:nth-child(2) b { color: var(--partial); }
+  .counts span:nth-child(3) b { color: var(--down); }
+  .spacer { flex: 1; }
+  .btn {
+    min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    background: rgba(255,255,255,.04); color: var(--text-soft); border: 1px solid var(--line);
+    border-radius: 10px; padding: 7px 13px; cursor: pointer; font: inherit; font-size: 12px;
+    transition: border-color .18s, background .18s, color .18s, transform .18s, box-shadow .18s;
+  }
+  .btn:hover {
+    color: var(--text); background: rgba(129,140,248,.1); border-color: rgba(129,140,248,.38);
+    box-shadow: 0 8px 24px rgba(0,0,0,.2); transform: translateY(-1px);
+  }
+  .btn:active { transform: translateY(0); }
+  .btn.small { min-height: 31px; padding: 5px 10px; font-size: 11.5px; }
+  .btn[data-a="restart"]::before { content: "↻"; font-size: 15px; }
+  .btn[data-a="rebuild"]::before { content: "◇"; font-size: 13px; }
+  .btn[data-a="logs"]::before { content: "›_"; font: 700 11px ui-monospace, monospace; }
+  .btn[data-a="stop"] { color: #fda4af; }
+  .btn[data-a="stop"]::before { content: "■"; font-size: 8px; }
+  .btn[data-a="start"]::before { content: "▶"; font-size: 9px; color: var(--up); }
+  .btn[data-a="deploy"]::before { content: "↑"; }
+  .toggle {
+    display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px;
+    cursor: pointer; user-select: none;
+  }
+  .toggle input {
+    appearance: none; width: 31px; height: 18px; border-radius: 999px;
+    background: #222a3a; border: 1px solid var(--line-bright); position: relative; margin: 0;
+    transition: .2s;
+  }
+  .toggle input::after {
+    content: ""; width: 12px; height: 12px; border-radius: 50%; background: #718096;
+    position: absolute; top: 2px; left: 2px; transition: .2s;
+  }
+  .toggle input:checked { background: rgba(52,211,153,.18); border-color: rgba(52,211,153,.35); }
+  .toggle input:checked::after { transform: translateX(13px); background: var(--up); box-shadow: 0 0 10px rgba(52,211,153,.5); }
+  main { padding: 28px 24px 70px; max-width: 1508px; margin: 0 auto; position: relative; }
+  .section-title {
+    color: #92a0b6; text-transform: uppercase; letter-spacing: .13em; font-weight: 700;
+    font-size: 10.5px; margin: 30px 3px 11px; display: flex; align-items: center; gap: 10px;
+  }
+  .section-title::after { content: ""; height: 1px; flex: 1; background: linear-gradient(90deg, var(--line), transparent 65%); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 13px; }
+  .card {
+    position: relative; overflow: hidden;
+    background: linear-gradient(145deg, rgba(18,24,39,.92), rgba(11,15,25,.86));
+    border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 17px 17px 15px; display: flex; flex-direction: column; gap: 13px;
+    box-shadow: 0 10px 38px rgba(0,0,0,.13);
+    transition: transform .22s ease, border-color .22s ease, box-shadow .22s ease;
+  }
+  .card::before {
+    content: ""; position: absolute; inset: 0 0 auto; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(129,140,248,.4), transparent);
+    opacity: 0; transition: opacity .22s;
+  }
+  .card:hover { transform: translateY(-2px); border-color: rgba(129,140,248,.25); box-shadow: var(--shadow); }
+  .card:hover::before { opacity: 1; }
+  .card-head { display: flex; align-items: center; gap: 10px; min-height: 25px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; position: relative; }
+  .dot::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 1px solid currentColor; opacity: .14; }
+  .dot.up { background: var(--up); color: var(--up); box-shadow: 0 0 12px rgba(52,211,153,.7); }
+  .dot.down { background: var(--down); color: var(--down); box-shadow: 0 0 10px rgba(251,113,133,.35); }
+  .dot.partial { background: var(--partial); color: var(--partial); box-shadow: 0 0 12px rgba(251,191,36,.45); }
+  .dot.monitor { background: var(--mon); color: var(--mon); }
+  .card h3 { margin: 0; font-size: 14.5px; font-weight: 650; letter-spacing: -.015em; }
+  .cat {
+    margin-left: auto; font-size: 9.5px; text-transform: uppercase; letter-spacing: .08em;
+    color: #8290a6; background: rgba(255,255,255,.025); border: 1px solid var(--line);
+    padding: 3px 8px; border-radius: 999px;
+  }
+  .rows { display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; min-height: 22px; }
+  .row .lbl {
+    color: #66748b; min-width: 48px; text-transform: uppercase; letter-spacing: .09em;
+    font-size: 9px; font-weight: 750;
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; line-height: 1;
+    padding: 5px 7px; border-radius: 7px; border: 1px solid var(--line);
+    background: rgba(255,255,255,.025); color: #91a0b6; white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .pill::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: .8; }
+  .pill.ok { color: #6ee7b7; background: rgba(52,211,153,.055); border-color: rgba(52,211,153,.16); }
+  .pill.bad { color: #fda4af; background: rgba(251,113,133,.055); border-color: rgba(251,113,133,.17); }
+  .pill.warn { color: #fcd34d; background: rgba(251,191,36,.05); border-color: rgba(251,191,36,.16); }
+  .actions {
+    display: flex; flex-wrap: wrap; gap: 6px; margin: 1px -2px -2px; padding-top: 12px;
+    border-top: 1px solid rgba(148,163,184,.08);
+  }
+  a.dom {
+    color: #a5b4fc; text-decoration: none; max-width: 210px; overflow: hidden;
+    white-space: nowrap; text-overflow: ellipsis;
+  }
+  a.dom:hover { color: #c7d2fe; }
+  .overlay {
+    position: fixed; inset: 0; background: rgba(2,4,10,.74); display: none;
+    align-items: center; justify-content: center; z-index: 30; padding: 20px;
+    backdrop-filter: blur(12px);
+  }
+  .overlay.show { display: flex; animation: fade .18s ease-out; }
+  .modal {
+    overflow: hidden; background: #0c111d; border: 1px solid var(--line-bright);
+    border-radius: 18px; width: min(920px, 96vw); height: min(660px, 86vh);
+    display: flex; flex-direction: column; box-shadow: 0 32px 100px rgba(0,0,0,.55);
+    animation: rise .22s ease-out;
+  }
+  .modal-head {
+    min-height: 58px; padding: 12px 16px 12px 20px; border-bottom: 1px solid var(--line);
+    background: rgba(255,255,255,.018); display: flex; align-items: center; gap: 11px;
+  }
+  .modal-head strong { font-size: 13px; }
+  .modal-head .status { font-size: 11px; color: var(--muted); padding: 3px 8px; border-radius: 999px; background: rgba(255,255,255,.035); }
+  pre.log {
+    margin: 0; padding: 18px 20px; overflow: auto; flex: 1; white-space: pre-wrap;
+    background: #080c14; font: 12px/1.65 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    color: #b8c3d6; scrollbar-color: #283247 transparent;
+  }
+  .sudo { padding: 12px 16px; border-top: 1px solid var(--line); display: none; gap: 8px; }
+  .sudo input {
+    flex: 1; background: var(--surface-raised); border: 1px solid var(--line);
+    color: var(--text); border-radius: 10px; padding: 9px 11px; outline: none;
+  }
+  .sudo input:focus { border-color: rgba(129,140,248,.48); box-shadow: 0 0 0 3px rgba(129,140,248,.08); }
+  .muted { color: var(--muted); }
+  .stamp { font-size: 11px; color: #65738a; font-variant-numeric: tabular-nums; }
+  .loading {
+    min-height: 55vh; display: grid; place-items: center; color: var(--muted);
+  }
+  .spinner { width: 22px; height: 22px; border: 2px solid var(--line-bright); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes fade { from { opacity: 0; } }
+  @keyframes rise { from { opacity: 0; transform: translateY(10px) scale(.99); } }
+  @media (max-width: 850px) {
+    header { padding: 10px 16px; gap: 12px; flex-wrap: wrap; }
+    .counts { order: 3; width: 100%; overflow-x: auto; padding-bottom: 2px; }
+    .stamp { display: none; }
+    main { padding: 18px 14px 50px; }
+    .grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 480px) {
+    .eyebrow, .toggle span { display: none; }
+    .brand-icon { width: 34px; height: 34px; }
+    .card { border-radius: 15px; padding: 15px; }
+    .counts span { padding: 5px 8px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <img class="brand-icon" src="/static/favicon.png" alt="" />
+    <div class="brand-copy">
+      <h1>Server Control</h1>
+      <span class="eyebrow">Operations Console</span>
+    </div>
+  </div>
+  <div class="counts" id="counts"></div>
+  <div class="spacer"></div>
+  <span class="stamp" id="stamp"></span>
+  <label class="toggle"><input type="checkbox" id="auto" checked /><span>Live</span></label>
+  <button class="btn" id="refresh">↻ Refresh</button>
+</header>
+<main id="main"><div class="loading"><div class="spinner"></div></div></main>
+
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <div class="modal-head">
+      <strong id="m-title">Job</strong>
+      <span class="status" id="m-status"></span>
+      <div class="spacer" style="flex:1"></div>
+      <button class="btn small" id="m-close">Close</button>
+    </div>
+    <pre class="log" id="m-log"></pre>
+    <div class="sudo" id="m-sudo">
+      <input type="password" id="m-pw" placeholder="sudo password (used once, not stored)" />
+      <button class="btn" id="m-run">Run deploy</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+let pendingDeploy = null;
+
+const healthLabel = { up: "all up", down: "down", partial: "partial", monitor: "monitor" };
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  if (!r.ok) throw new Error((await r.text()) || r.status);
+  return r.json();
+}
+
+function portPills(ports) {
+  return (ports || []).map(p =>
+    `<span class="pill ${p.open ? "ok" : "bad"}">${p.port}·${p.label}</span>`
+  ).join("");
+}
+function procPills(map, upVal) {
+  return Object.entries(map || {}).map(([n, s]) =>
+    `<span class="pill ${s === upVal ? "ok" : (s === "missing" ? "" : "bad")}">${n}: ${s}</span>`
+  ).join("");
+}
+function domRows(domains) {
+  return (domains || []).map(d => {
+    const cls = d.code && d.code < 400 ? "ok" : "bad";
+    const code = d.code === null ? "down" : d.code;
+    const host = d.url.replace(/^https?:\/\//, "");
+    return `<a class="dom" href="${d.url}" target="_blank">${host}</a> <span class="pill ${cls}">${code}</span>`;
+  }).join(" ");
+}
+
+function card(p) {
+  const acts = [];
+  const controllable = Object.keys(p.pm2 || {}).length || p.has_docker;
+  if (controllable) {
+    acts.push(`<button class="btn small" data-a="restart" data-p="${p.id}">Restart</button>`);
+    if (p.has_docker)
+      acts.push(`<button class="btn small" data-a="rebuild" data-p="${p.id}">Rebuild</button>`);
+    acts.push(`<button class="btn small" data-a="logs" data-p="${p.id}">Logs</button>`);
+    acts.push(`<button class="btn small" data-a="stop" data-p="${p.id}">Stop</button>`);
+    acts.push(`<button class="btn small" data-a="start" data-p="${p.id}">Start</button>`);
+  }
+  if (p.deploy)
+    acts.push(`<button class="btn small" data-a="deploy" data-p="${p.id}">Deploy</button>`);
+
+  const rows = [];
+  if (Object.keys(p.pm2 || {}).length)
+    rows.push(`<div class="row"><span class="lbl">pm2</span>${procPills(p.pm2, "online")}</div>`);
+  if (p.has_docker)
+    rows.push(`<div class="row"><span class="lbl">docker</span>${procPills(p.docker, "running") || '<span class="muted">compose</span>'}</div>`);
+  if (p.ports && p.ports.length)
+    rows.push(`<div class="row"><span class="lbl">ports</span>${portPills(p.ports)}</div>`);
+  if (p.domains && p.domains.length)
+    rows.push(`<div class="row"><span class="lbl">web</span>${domRows(p.domains)}</div>`);
+  if (p.notes)
+    rows.push(`<div class="row muted">${p.notes}</div>`);
+
+  return `<div class="card">
+    <div class="card-head">
+      <span class="dot ${p.health}" title="${healthLabel[p.health]}"></span>
+      <h3>${p.name}</h3><span class="cat">${p.category}</span>
+    </div>
+    <div class="rows">${rows.join("")}</div>
+    <div class="actions">${acts.join("")}</div>
+  </div>`;
+}
+
+function infraCard(i) {
+  const rows = [];
+  if ("active" in i)
+    rows.push(`<div class="row"><span class="lbl">service</span><span class="pill ${i.active ? "ok" : "bad"}">${i.active ? "active" : "inactive"}</span></div>`);
+  if (i.ports)
+    rows.push(`<div class="row"><span class="lbl">ports</span>${portPills(i.ports)}</div>`);
+  const ok = ("active" in i ? i.active : true) &&
+    (i.ports ? i.ports.some(p => p.open) : true);
+  return `<div class="card">
+    <div class="card-head"><span class="dot ${ok ? "up" : "down"}"></span>
+      <h3>${i.name}</h3><span class="cat">infra</span></div>
+    <div class="rows">${rows.join("")}</div></div>`;
+}
+
+async function render() {
+  try {
+    const d = await api("/api/status");
+    const cats = { "web-app": [], "self-hosted": [], "lan-device": [] };
+    d.projects.forEach(p => (cats[p.category] || (cats[p.category] = [])).push(p));
+
+    let up = 0, down = 0, part = 0;
+    d.projects.forEach(p => {
+      if (p.health === "up") up++;
+      else if (p.health === "down") down++;
+      else if (p.health === "partial") part++;
+    });
+    $("#counts").innerHTML =
+      `<span><b>${up}</b> up</span><span><b>${part}</b> partial</span>` +
+      `<span><b>${down}</b> down</span><span><b>${d.projects.length}</b> projects</span>`;
+    $("#stamp").textContent = "updated " + new Date(d.ts * 1000).toLocaleTimeString();
+
+    const titles = { "web-app": "Web Apps", "self-hosted": "Self-Hosted", "lan-device": "LAN Devices" };
+    let html = "";
+    for (const key of ["web-app", "self-hosted", "lan-device"]) {
+      if (!cats[key] || !cats[key].length) continue;
+      html += `<div class="section-title">${titles[key]}</div><div class="grid">` +
+        cats[key].map(card).join("") + `</div>`;
+    }
+    if (d.infra && d.infra.length)
+      html += `<div class="section-title">Infrastructure</div><div class="grid">` +
+        d.infra.map(infraCard).join("") + `</div>`;
+    $("#main").innerHTML = html;
+
+    $("#main").querySelectorAll("button[data-a]").forEach(b =>
+      b.addEventListener("click", () => onAction(b.dataset.p, b.dataset.a)));
+  } catch (e) {
+    $("#main").innerHTML = `<p class="pill bad">Error: ${e.message}</p>`;
+  }
+}
+
+function openModal(title) {
+  $("#m-title").textContent = title;
+  $("#m-log").textContent = "";
+  $("#m-status").textContent = "";
+  $("#m-sudo").style.display = "none";
+  $("#overlay").classList.add("show");
+}
+function closeModal() { $("#overlay").classList.remove("show"); pendingDeploy = null; }
+
+async function onAction(project, action) {
+  openModal(`${project} · ${action}`);
+  if (action === "deploy") {
+    $("#m-log").textContent =
+      "Deploy runs the project's deploy.sh (nginx/SSL, needs sudo).\n" +
+      "It first tries passwordless sudo. If your sudo needs a password,\n" +
+      "enter it below (used once, not stored) — requires ALLOW_SUDO_PASSWORD=1.\n";
+    $("#m-sudo").style.display = "flex";
+    pendingDeploy = project;
+    return;
+  }
+  await startJob(project, action, null);
+}
+
+async function startJob(project, action, sudo_password) {
+  $("#m-status").textContent = "running…";
+  try {
+    const { job } = await api("/api/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project, action, sudo_password }),
+    });
+    await poll(job);
+  } catch (e) {
+    $("#m-log").textContent += "\n[error] " + e.message;
+    $("#m-status").textContent = "failed";
+  }
+}
+
+async function poll(job) {
+  const log = $("#m-log");
+  while (true) {
+    const j = await api("/api/jobs/" + job);
+    log.textContent = j.output || "";
+    log.scrollTop = log.scrollHeight;
+    if (j.done) {
+      $("#m-status").textContent = j.rc === 0 ? "✓ done" : `✗ exit ${j.rc}`;
+      render();
+      break;
+    }
+    await new Promise(r => setTimeout(r, 700));
+  }
+}
+
+$("#refresh").addEventListener("click", render);
+$("#m-close").addEventListener("click", closeModal);
+$("#overlay").addEventListener("click", e => { if (e.target.id === "overlay") closeModal(); });
+$("#m-run").addEventListener("click", () => {
+  if (pendingDeploy) { $("#m-sudo").style.display = "none"; startJob(pendingDeploy, "deploy", $("#m-pw").value); }
+});
+
+let timer = null;
+function loop() { if ($("#auto").checked) render(); }
+$("#auto").addEventListener("change", () => {
+  clearInterval(timer);
+  if ($("#auto").checked) timer = setInterval(loop, 10000);
+});
+timer = setInterval(loop, 10000);
+render();
+</script>
+</body>
+</html>

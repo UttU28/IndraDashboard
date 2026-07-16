@@ -1,0 +1,190 @@
+# Server Dashboard registry — edit this to add/remove projects.
+# Derived from ~/Desktop/PORTS.md + safety audit (2026-07-16).
+#
+# Per project:
+#   name      : display name
+#   category  : web-app | self-hosted | lan-device | infra
+#   pm2       : list of PM2 process names (managed as your user, no sudo)
+#   docker    :
+#     dir              : compose directory
+#     containers       : docker ps names (status pills)
+#     compose_services : compose service names used by start/stop/restart/rebuild/logs
+#                        REQUIRED for start/rebuild (refuses unscoped `up`)
+#   ports     : list of { port, label } checked on 127.0.0.1
+#   domains   : list of https URLs to health-check (HTTP status)
+#   deploy    : { script, sudo, safe, args? }
+#               Deploy button only shows when safe: true
+#   notes     : optional string
+
+projects:
+  - id: apeksha
+    name: Apeksha
+    category: web-app
+    pm2: [apeksha-frontend]
+    docker:
+      dir: ~/Desktop/Apeksha/backend/deploy
+      containers: [livekit-server, bhasini-translation-api]
+      compose_services: [livekit, bhasini-api]
+    ports:
+      - { port: 9200, label: frontend }
+      - { port: 9201, label: api }
+      - { port: 7880, label: livekit }
+    domains:
+      - https://apeksha.thatinsaneguy.com
+      - https://apekshaapi.thatinsaneguy.com
+    # Full nginx/SSL deploy — use from a terminal: sudo bash ~/Desktop/Apeksha/deploy.sh
+    deploy: { script: ~/Desktop/Apeksha/deploy.sh, sudo: true, safe: false }
+
+  - id: linkitup
+    name: LinkItUp
+    category: web-app
+    pm2: [link-frontend, link-backend]
+    ports:
+      - { port: 9220, label: frontend }
+      - { port: 9221, label: api }
+    domains:
+      - https://linkitup.thatinsaneguy.com
+    deploy: { script: ~/Desktop/LinkedIn_Reverse_Search/deploy.sh, sudo: true, safe: false }
+
+  - id: habittracker
+    name: Habit Tracker
+    category: web-app
+    pm2: [habittracker]
+    ports:
+      - { port: 9210, label: api }
+    domains:
+      - https://habit.thatinsaneguy.com
+    deploy: { script: ~/Desktop/habitTracker/backend/deploy.sh, sudo: true, safe: false }
+
+  - id: mememaker
+    name: MemeMaker
+    category: web-app
+    pm2: [memevoiceclone-frontend, mememaker-backend]
+    docker:
+      dir: ~/Desktop/MemeMaker/F5-TTS
+      containers: []
+      compose_services: [f5-tts]
+    ports:
+      - { port: 9230, label: frontend }
+      - { port: 9231, label: api }
+      - { port: 9232, label: f5-tts }
+    domains:
+      - https://meme.thatinsaneguy.com
+    deploy: { script: ~/Desktop/MemeMaker/deploy.sh, sudo: true, safe: false }
+    notes: F5-TTS needs NVIDIA runtime. PM2 names appear after first deploy.
+
+  - id: resumeforge
+    name: resumeForge
+    category: web-app
+    pm2: [frontend]
+    docker:
+      dir: ~/Desktop/resumeForge
+      containers: [resume-forge-backend]
+      compose_services: [resume-forge-backend]
+    ports:
+      - { port: 9240, label: frontend }
+      - { port: 9241, label: api }
+    domains: []
+    deploy: { script: ~/Desktop/resumeForge/deploy.sh, sudo: true, safe: false }
+    notes: PM2 name "frontend" is generic — only restart if that process is yours.
+
+  - id: saral
+    name: Saral Job Viewer
+    category: web-app
+    docker:
+      dir: ~/Desktop/Saral-Job-Viewer
+      containers: [saral-api, saral-ui, saral-redis]
+      # Never include nginx/certbot — those bind host :80/:443 and clash with system nginx.
+      compose_services: [sjv-redis, api, frontend]
+    ports:
+      - { port: 9260, label: api }
+      - { port: 9261, label: ui }
+    domains:
+      - https://saral.thatinsaneguy.com
+    deploy: { script: ~/Desktop/Saral-Job-Viewer/deploy.sh, sudo: true, safe: false }
+
+  - id: moviecontroller
+    name: Movie Controller
+    category: web-app
+    pm2: [moviecontroller-frontend, moviecontroller-backend]
+    ports:
+      - { port: 9280, label: frontend }
+      - { port: 9281, label: api-lan }
+    domains:
+      - https://control.thatinsaneguy.com
+    deploy:
+      script: ~/Desktop/movieController/deploy.sh
+      sudo: true
+      safe: false
+      args: ["0"]
+    notes: PM2 names appear after first deploy.
+
+  - id: nextcloud
+    name: Nextcloud
+    category: self-hosted
+    docker:
+      dir: ~/Desktop/selfHosted/nextcloud
+      containers: [nextcloud, nextcloud-redis, nextcloud-db]
+      compose_services: [nextcloud, nextcloud-redis, nextcloud-db]
+    ports:
+      - { port: 9270, label: web }
+    domains:
+      - https://kloud.thatinsaneguy.com
+    deploy: { script: ~/Desktop/selfHosted/nextcloud/deploy.sh, sudo: true, safe: false }
+
+  - id: immich
+    name: Immich
+    category: self-hosted
+    docker:
+      dir: ~/Desktop/selfHosted/immich
+      containers: [immich-server, immich-postgres, immich-machine-learning, immich-redis]
+      compose_services: [immich-server, immich-database, immich-machine-learning, immich-redis]
+    ports:
+      - { port: 2283, label: web }
+    domains:
+      - https://photos.thatinsaneguy.com
+    deploy: { script: ~/Desktop/selfHosted/immich/deploy.sh, sudo: true, safe: false }
+
+  - id: jellyfin
+    name: Jellyfin
+    category: self-hosted
+    docker:
+      dir: ~/Desktop/selfHosted/jellyfin
+      containers: [jellyfin]
+      compose_services: [jellyfin]
+    ports:
+      - { port: 8096, label: web }
+    domains:
+      - https://streaming.thatinsaneguy.com
+    deploy: { script: ~/Desktop/selfHosted/jellyfin/deploy.sh, sudo: true, safe: false }
+    notes: May need NVIDIA runtime for hardware transcode.
+
+  - id: tinypilot
+    name: TinyPilot (LAN)
+    category: lan-device
+    domains:
+      - https://tpilot.thatinsaneguy.com
+    notes: KVM device on LAN — monitor only (no local start/stop).
+
+  - id: octopi
+    name: OctoPi (LAN)
+    category: lan-device
+    domains:
+      - https://bramha.thatinsaneguy.com
+    notes: 3D printer host on LAN — monitor only (no local start/stop).
+
+# Infra services checked for status (no per-project deploy button).
+infra:
+  - id: nginx
+    name: nginx
+    systemd: nginx
+    ports:
+      - { port: 80, label: http }
+      - { port: 443, label: https }
+  - id: docker
+    name: Docker Engine
+    systemd: docker
+  - id: ollama
+    name: Ollama
+    ports:
+      - { port: 11434, label: llm }
