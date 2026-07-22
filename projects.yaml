@@ -76,7 +76,8 @@ projects:
   - id: resumeforge
     name: resumeForge
     category: web-app
-    pm2: [frontend]
+    pm2: [resumeforge-frontend]
+    pm2_bootstrap: ~/Desktop/resumeForge/frontend/deploy.sh
     docker:
       dir: ~/Desktop/resumeForge
       containers: [resume-forge-backend]
@@ -86,7 +87,7 @@ projects:
       - { port: 9241, label: api }
     domains: []
     deploy: { script: ~/Desktop/resumeForge/deploy.sh, sudo: true, safe: false }
-    notes: PM2 name "frontend" is generic — only restart if that process is yours.
+    notes: PM2 name is resumeforge-frontend (not generic "frontend").
 
   - id: saral
     name: Saral Job Viewer

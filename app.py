@@ -254,6 +254,30 @@ def _compose_service_args(d: dict[str, Any] | None) -> str:
     return " ".join(str(n) for n in names if n)
 
 
+def _pm2_cmd(action: str, names: list[str], bootstrap: str | None = None) -> str:
+    """Build a PM2 command that targets process names, not script paths.
+
+    `pm2 start foo` treats `foo` as a script when no saved process exists —
+    use restart-by-name for the Start button, and optional bootstrap script
+    when the process was never registered (or was deleted from PM2).
+    """
+    if not names:
+        return ""
+    names_s = " ".join(names)
+    pm2_action = "restart" if action == "start" else action
+    if bootstrap and action == "start":
+        boot = expand(bootstrap)
+        checks = " ".join(
+            f"pm2 describe {n!r} >/dev/null 2>&1 || missing=1;" for n in names
+        )
+        return (
+            f"missing=0; {checks} "
+            f'if [ "$missing" = "1" ]; then bash {boot!r}; '
+            f"else pm2 {pm2_action} {names_s}; fi"
+        )
+    return f"pm2 {pm2_action} {names_s}"
+
+
 def _docker_compose_cmd(ddir: str, base: str, d: dict[str, Any] | None) -> str:
     svc = _compose_service_args(d)
     if svc:
@@ -275,7 +299,9 @@ def _build_commands(p: dict[str, Any], action: str, sudo_pw: str | None) -> list
 
     if action in ("restart", "stop", "start"):
         if pm2_names:
-            cmds.append(f"pm2 {action} {' '.join(pm2_names)}")
+            pm2_line = _pm2_cmd(action, pm2_names, p.get("pm2_bootstrap"))
+            if pm2_line:
+                cmds.append(pm2_line)
         if ddir:
             dc = {
                 "restart": "docker compose restart",
