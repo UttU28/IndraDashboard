@@ -92,6 +92,23 @@
   .btn[data-a="stop"]::before { content: "■"; font-size: 8px; }
   .btn[data-a="start"]::before { content: "▶"; font-size: 9px; color: var(--up); }
   .btn[data-a="deploy"]::before { content: "↑"; }
+  .btn[data-a="pull"]::before { content: "↓"; font-size: 13px; }
+  .btn.suggested {
+    color: var(--text);
+    background: rgba(52, 211, 153, .14);
+    border-color: rgba(52, 211, 153, .45);
+    box-shadow: 0 0 0 1px rgba(52, 211, 153, .12), 0 8px 24px rgba(52, 211, 153, .12);
+    animation: pulse-suggest 2.2s ease-in-out infinite;
+  }
+  @keyframes pulse-suggest {
+    0%, 100% { box-shadow: 0 0 0 1px rgba(52, 211, 153, .12), 0 8px 24px rgba(52, 211, 153, .12); }
+    50% { box-shadow: 0 0 0 1px rgba(52, 211, 153, .28), 0 8px 28px rgba(52, 211, 153, .22); }
+  }
+  .pull-hint {
+    width: 100%; margin: -4px 0 2px; padding: 7px 10px; border-radius: 9px;
+    background: rgba(52, 211, 153, .08); border: 1px solid rgba(52, 211, 153, .18);
+    color: #86efac; font-size: 11px;
+  }
   .toggle {
     display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px;
     cursor: pointer; user-select: none;
@@ -185,6 +202,7 @@
   }
   .modal-head strong { font-size: 13px; }
   .modal-head .status { font-size: 11px; color: var(--muted); padding: 3px 8px; border-radius: 999px; background: rgba(255,255,255,.035); }
+  .modal-head .status.conflict { color: #fecaca; background: rgba(251,113,133,.12); border: 1px solid rgba(251,113,133,.25); }
   pre.log {
     margin: 0; padding: 18px 20px; overflow: auto; flex: 1; white-space: pre-wrap;
     background: #080c14; font: 12px/1.65 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
@@ -256,6 +274,10 @@
 <script>
 const $ = (s, r = document) => r.querySelector(s);
 let pendingDeploy = null;
+/** project id -> "rebuild" | "restart" after a pull brought new commits */
+const suggestedAfterPull = {};
+/** last /api/status payload — used after pull to pick rebuild vs restart */
+let lastStatus = null;
 
 const healthLabel = { up: "all up", down: "down", partial: "partial", monitor: "monitor" };
 
@@ -287,16 +309,28 @@ function domRows(domains) {
 function card(p) {
   const acts = [];
   const controllable = Object.keys(p.pm2 || {}).length || p.has_docker;
+  const suggest = suggestedAfterPull[p.id];
+
+  if (p.has_git)
+    acts.push(`<button class="btn small" data-a="pull" data-p="${p.id}">Pull</button>`);
+
   if (controllable) {
-    acts.push(`<button class="btn small" data-a="restart" data-p="${p.id}">Restart</button>`);
-    if (p.has_docker)
-      acts.push(`<button class="btn small" data-a="rebuild" data-p="${p.id}">Rebuild</button>`);
+    const restartCls = suggest === "restart" && !p.has_docker ? " suggested" : "";
+    acts.push(`<button class="btn small${restartCls}" data-a="restart" data-p="${p.id}">Restart</button>`);
+    if (p.has_docker) {
+      const rebuildCls = suggest === "rebuild" ? " suggested" : "";
+      acts.push(`<button class="btn small${rebuildCls}" data-a="rebuild" data-p="${p.id}">Rebuild</button>`);
+    }
     acts.push(`<button class="btn small" data-a="logs" data-p="${p.id}">Logs</button>`);
     acts.push(`<button class="btn small" data-a="stop" data-p="${p.id}">Stop</button>`);
     acts.push(`<button class="btn small" data-a="start" data-p="${p.id}">Start</button>`);
   }
   if (p.deploy)
     acts.push(`<button class="btn small" data-a="deploy" data-p="${p.id}">Deploy</button>`);
+
+  const pullHint = suggest
+    ? `<div class="pull-hint">Updates pulled — use ${suggest === "rebuild" ? "Rebuild" : "Restart"} to apply them.</div>`
+    : "";
 
   const rows = [];
   if (Object.keys(p.pm2 || {}).length)
@@ -316,6 +350,7 @@ function card(p) {
       <h3>${p.name}</h3><span class="cat">${p.category}</span>
     </div>
     <div class="rows">${rows.join("")}</div>
+    ${pullHint}
     <div class="actions">${acts.join("")}</div>
   </div>`;
 }
@@ -337,6 +372,7 @@ function infraCard(i) {
 async function render() {
   try {
     const d = await api("/api/status");
+    lastStatus = d;
     const cats = { "web-app": [], "self-hosted": [], "lan-device": [] };
     d.projects.forEach(p => (cats[p.category] || (cats[p.category] = [])).push(p));
 
@@ -374,12 +410,16 @@ function openModal(title) {
   $("#m-title").textContent = title;
   $("#m-log").textContent = "";
   $("#m-status").textContent = "";
+  $("#m-status").classList.remove("conflict");
   $("#m-sudo").style.display = "none";
   $("#overlay").classList.add("show");
 }
 function closeModal() { $("#overlay").classList.remove("show"); pendingDeploy = null; }
 
 async function onAction(project, action) {
+  if (action === "rebuild" || action === "restart")
+    delete suggestedAfterPull[project];
+
   openModal(`${project} · ${action}`);
   if (action === "deploy") {
     $("#m-log").textContent =
@@ -401,21 +441,32 @@ async function startJob(project, action, sudo_password) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ project, action, sudo_password }),
     });
-    await poll(job);
+    await poll(job, project, action);
   } catch (e) {
     $("#m-log").textContent += "\n[error] " + e.message;
     $("#m-status").textContent = "failed";
   }
 }
 
-async function poll(job) {
+async function poll(job, project, action) {
   const log = $("#m-log");
   while (true) {
     const j = await api("/api/jobs/" + job);
     log.textContent = j.output || "";
     log.scrollTop = log.scrollHeight;
     if (j.done) {
-      $("#m-status").textContent = j.rc === 0 ? "✓ done" : `✗ exit ${j.rc}`;
+      const statusEl = $("#m-status");
+      statusEl.classList.remove("conflict");
+      if (j.conflicts) {
+        statusEl.textContent = "⚠ merge conflicts";
+        statusEl.classList.add("conflict");
+      } else {
+        statusEl.textContent = j.rc === 0 ? "✓ done" : `✗ exit ${j.rc}`;
+      }
+      if (action === "pull" && j.updated && !j.conflicts) {
+        const proj = (lastStatus?.projects || []).find(p => p.id === project);
+        suggestedAfterPull[project] = proj?.has_docker ? "rebuild" : "restart";
+      }
       render();
       break;
     }

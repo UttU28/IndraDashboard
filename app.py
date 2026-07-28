@@ -1,7 +1,7 @@
 """Server Dashboard — one pane to view/control all Desktop projects.
 
 Status (PM2 + Docker + ports + domains) and actions (restart/rebuild/stop/
-start/logs/deploy) for every project defined in projects.yaml.
+start/logs/deploy/pull) for every project defined in projects.yaml.
 
 Runs as your user on 127.0.0.1:9282 (put nginx in front for a domain).
 PM2 and Docker actions need no sudo. Full deploy.sh needs sudo; see README.
@@ -209,6 +209,7 @@ def collect_status() -> dict[str, Any]:
                 # Deploy only when explicitly marked safe (avoids interactive /
                 # multi-project / wrong-cwd scripts).
                 "deploy": bool(dep) and bool(dep.get("safe")),
+                "has_git": bool(p.get("git_repos")),
                 "notes": p.get("notes", ""),
                 "health": health,
             }
@@ -350,6 +351,185 @@ def _build_commands(p: dict[str, Any], action: str, sudo_pw: str | None) -> list
     return cmds
 
 
+def _git_repos(p: dict[str, Any]) -> list[str]:
+    return [expand(r) for r in (p.get("git_repos") or []) if r]
+
+
+def _git_rev(repo: str) -> str | None:
+    try:
+        out = subprocess.run(
+            ["git", "-C", repo, "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if out.returncode != 0:
+            return None
+        return out.stdout.strip()
+    except Exception:
+        return None
+
+
+STASH_MSG = "indra-pull-autostash"
+
+
+def _git_cmd(repo: str, *args: str, timeout: int = 30) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", repo, *args],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
+def _git_dirty(repo: str) -> bool:
+    try:
+        return bool(_git_cmd(repo, "status", "--porcelain").stdout.strip())
+    except Exception:
+        return False
+
+
+def _git_unmerged(repo: str) -> list[str]:
+    try:
+        out = _git_cmd(repo, "diff", "--name-only", "--diff-filter=U").stdout
+        return [line.strip() for line in out.splitlines() if line.strip()]
+    except Exception:
+        return []
+
+
+def _git_stream(
+    repo: str,
+    append,
+    *args: str,
+    timeout: int = 120,
+) -> int:
+    append(f"$ git -C {repo!r} {' '.join(args)}\n")
+    try:
+        proc = subprocess.Popen(
+            ["git", "-C", repo, *args],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            append(line)
+        proc.wait(timeout=timeout)
+        return proc.returncode or 0
+    except subprocess.TimeoutExpired:
+        append(f"\n[timed out after {timeout}s]\n")
+        return 124
+    except Exception as exc:  # noqa: BLE001
+        append(f"\n[error: {exc!r}]\n")
+        return 1
+
+
+def _run_pull_job(job_id: str, repos: list[str]) -> None:
+    def append(text: str) -> None:
+        with JOBS_LOCK:
+            JOBS[job_id]["output"] += text
+
+    worst_rc = 0
+    updated = False
+    conflicts = False
+    desktop = expand("~/Desktop")
+
+    append(
+        "Stash local changes → pull remote updates → stash pop.\n"
+        "Your running system is untouched until you Rebuild/Restart.\n\n"
+    )
+
+    for repo in repos:
+        rel = repo.replace(desktop + "/", "")
+        append(f"\n=== {rel or repo} ===\n")
+        if not Path(repo, ".git").is_dir():
+            append("[skip: not a git repo]\n")
+            worst_rc = max(worst_rc, 1)
+            continue
+
+        try:
+            branch = _git_cmd(repo, "branch", "--show-current").stdout.strip() or "unknown"
+        except Exception:
+            branch = "unknown"
+        append(f"branch: {branch}\n")
+
+        stashed = False
+        if _git_dirty(repo):
+            append("local changes detected — stashing before pull\n")
+            rc = _git_stream(
+                repo, append, "stash", "push", "-u", "-m", STASH_MSG, timeout=60
+            )
+            if rc != 0:
+                append("stash: failed (pull skipped for this repo)\n")
+                worst_rc = max(worst_rc, rc)
+                continue
+            stashed = True
+            append("stash: ok\n")
+        else:
+            append("working tree clean — no stash needed\n")
+
+        before = _git_rev(repo)
+        rc = _git_stream(repo, append, "pull", "--ff-only")
+        if rc != 0:
+            append("pull: failed\n")
+            if stashed:
+                append("restoring stashed changes…\n")
+                pop_rc = _git_stream(repo, append, "stash", "pop")
+                if pop_rc != 0:
+                    append(
+                        "[warning] could not restore stash — "
+                        "run `git stash list` and `git stash pop` manually\n"
+                    )
+                    conflicts = True
+                    worst_rc = max(worst_rc, pop_rc)
+                else:
+                    append("stash restored\n")
+            worst_rc = max(worst_rc, rc)
+            continue
+
+        after = _git_rev(repo)
+        repo_updated = bool(before and after and before != after)
+        if repo_updated:
+            updated = True
+            append("pull: ok (updated)\n")
+        else:
+            append("pull: ok (already up to date)\n")
+
+        if not stashed:
+            continue
+
+        append("re-applying stashed changes…\n")
+        pop_rc = _git_stream(repo, append, "stash", "pop")
+        if pop_rc != 0:
+            unmerged = _git_unmerged(repo)
+            conflicts = True
+            worst_rc = max(worst_rc, pop_rc)
+            append("\n*** MERGE CONFLICT after stash pop ***\n")
+            append(
+                "Remote updates were pulled, but your local changes conflict.\n"
+                "Resolve conflicts in the repo, then rebuild/restart when ready.\n"
+            )
+            if unmerged:
+                append("Conflicted files:\n")
+                for path in unmerged:
+                    append(f"  • {path}\n")
+            else:
+                append(
+                    "Check `git status` in the repo for conflict markers (<<<<<<<).\n"
+                )
+            append(f"Repo path: {repo}\n")
+        else:
+            append("stash pop: ok (local changes restored)\n")
+
+    with JOBS_LOCK:
+        JOBS[job_id]["rc"] = worst_rc
+        JOBS[job_id]["done"] = True
+        JOBS[job_id]["updated"] = updated and worst_rc == 0 and not conflicts
+        JOBS[job_id]["conflicts"] = conflicts
+        JOBS[job_id]["finished"] = int(time.time())
+
+
 def _run_job(job_id: str, cmds: list[str], action: str) -> None:
     def append(text: str) -> None:
         with JOBS_LOCK:
@@ -419,6 +599,28 @@ def api_action(payload: dict[str, Any], _: None = Depends(_auth)) -> JSONRespons
     p = _find_project(pid)
     if not p:
         raise HTTPException(404, f"unknown project {pid!r}")
+
+    if action == "pull":
+        repos = _git_repos(p)
+        if not repos:
+            raise HTTPException(400, "no git_repos configured for this project")
+        job_id = uuid.uuid4().hex[:12]
+        with JOBS_LOCK:
+            JOBS[job_id] = {
+                "project": pid,
+                "action": action,
+                "output": "",
+                "rc": None,
+                "done": False,
+                "updated": False,
+                "conflicts": False,
+                "started": int(time.time()),
+            }
+        threading.Thread(
+            target=_run_pull_job, args=(job_id, repos), daemon=True
+        ).start()
+        return JSONResponse({"job": job_id})
+
     try:
         cmds = _build_commands(p, action, sudo_pw)
     except ValueError as exc:
@@ -432,6 +634,7 @@ def api_action(payload: dict[str, Any], _: None = Depends(_auth)) -> JSONRespons
             "output": "",
             "rc": None,
             "done": False,
+            "updated": False,
             "started": int(time.time()),
         }
     threading.Thread(

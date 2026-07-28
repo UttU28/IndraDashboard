@@ -14,12 +14,17 @@
 #   domains   : list of https URLs to health-check (HTTP status)
 #   deploy    : { script, sudo, safe, args? }
 #               Deploy button only shows when safe: true
+#   git_repos : list of repo paths to `git pull --ff-only` (Pull button)
+#               e.g. Apeksha has separate frontend + backend repos
 #   notes     : optional string
 
 projects:
   - id: apeksha
     name: Apeksha
     category: web-app
+    git_repos:
+      - ~/Desktop/Apeksha/backend
+      - ~/Desktop/Apeksha/frontend
     pm2: [apeksha-frontend]
     docker:
       dir: ~/Desktop/Apeksha/backend/deploy
@@ -38,6 +43,7 @@ projects:
   - id: linkitup
     name: LinkItUp
     category: web-app
+    git_repos: [~/Desktop/LinkedIn_Reverse_Search]
     pm2: [link-frontend, link-backend]
     ports:
       - { port: 9220, label: frontend }
@@ -49,6 +55,7 @@ projects:
   - id: habittracker
     name: Habit Tracker
     category: web-app
+    git_repos: [~/Desktop/habitTracker]
     pm2: [habittracker]
     ports:
       - { port: 9210, label: api }
@@ -59,6 +66,7 @@ projects:
   - id: mememaker
     name: MemeMaker
     category: web-app
+    git_repos: [~/Desktop/MemeMaker]
     pm2: [memevoiceclone-frontend, mememaker-backend]
     docker:
       dir: ~/Desktop/MemeMaker/F5-TTS
@@ -76,6 +84,7 @@ projects:
   - id: resumeforge
     name: resumeForge
     category: web-app
+    git_repos: [~/Desktop/resumeForge]
     pm2: [resumeforge-frontend]
     pm2_bootstrap: ~/Desktop/resumeForge/frontend/deploy.sh
     docker:
@@ -92,6 +101,7 @@ projects:
   - id: saral
     name: Saral Job Viewer
     category: web-app
+    git_repos: [~/Desktop/Saral-Job-Viewer]
     docker:
       dir: ~/Desktop/Saral-Job-Viewer
       containers: [saral-api, saral-ui, saral-redis]
@@ -107,6 +117,7 @@ projects:
   - id: moviecontroller
     name: Movie Controller
     category: web-app
+    git_repos: [~/Desktop/movieController]
     pm2: [moviecontroller-frontend, moviecontroller-backend]
     ports:
       - { port: 9280, label: frontend }
@@ -123,6 +134,7 @@ projects:
   - id: nextcloud
     name: Nextcloud
     category: self-hosted
+    git_repos: [~/Desktop/selfHosted]
     docker:
       dir: ~/Desktop/selfHosted/nextcloud
       containers: [nextcloud, nextcloud-redis, nextcloud-db]
@@ -136,6 +148,7 @@ projects:
   - id: immich
     name: Immich
     category: self-hosted
+    git_repos: [~/Desktop/selfHosted]
     docker:
       dir: ~/Desktop/selfHosted/immich
       containers: [immich-server, immich-postgres, immich-machine-learning, immich-redis]
@@ -149,6 +162,7 @@ projects:
   - id: jellyfin
     name: Jellyfin
     category: self-hosted
+    git_repos: [~/Desktop/selfHosted]
     docker:
       dir: ~/Desktop/selfHosted/jellyfin
       containers: [jellyfin]
