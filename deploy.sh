@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Server Control dashboard — deploy FastAPI + PM2 + nginx + Let's Encrypt
+# Indra — deploy FastAPI + PM2 + nginx + Let's Encrypt
 # (indra.thatinsaneguy.com)
 #
 # Usage (from this directory):
@@ -8,7 +8,7 @@
 #   sudo ./deploy.sh               # full: venv, pm2, nginx, certbot
 #
 # Optional env:
-#   DASHBOARD_PORT=9282           # must match nginx upstream in nginx-serverdashboard.conf
+#   DASHBOARD_PORT=9282           # must match nginx upstream in nginx-indra.conf
 #   DOMAIN=indra.thatinsaneguy.com
 #   CERTBOT_EMAIL=you@example.com   # required for first non-interactive cert (Let's Encrypt)
 #   SKIP_SSL=1                    # only HTTP nginx + app (no certbot)
@@ -21,7 +21,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/../dktp/deployLib.sh"
 APP_ROOT="${SCRIPT_DIR}"
 ECOSYSTEM="${APP_ROOT}/ecosystem.config.cjs"
-NGINX_TEMPLATE="${APP_ROOT}/nginx-serverdashboard.conf"
+NGINX_TEMPLATE="${APP_ROOT}/nginx-indra.conf"
 
 DOMAIN="${DOMAIN:-indra.thatinsaneguy.com}"
 PORT="${DASHBOARD_PORT:-9282}"
@@ -33,10 +33,10 @@ RED='\033[0;31m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-step()   { echo -e "${BLUE}[dashboard]${NC} $*"; }
-info()   { echo -e "${GREEN}[dashboard]${NC} $*"; }
-warn()   { echo -e "${YELLOW}[dashboard]${NC} $*" >&2; }
-err()    { echo -e "${RED}[dashboard]${NC} $*" >&2; }
+step()   { echo -e "${BLUE}[indra]${NC} $*"; }
+info()   { echo -e "${GREEN}[indra]${NC} $*"; }
+warn()   { echo -e "${YELLOW}[indra]${NC} $*" >&2; }
+err()    { echo -e "${RED}[indra]${NC} $*" >&2; }
 banner() {
   echo ""
   echo -e "${CYAN}================================================================================${NC}"
@@ -46,7 +46,7 @@ banner() {
 }
 
 START_TS=$(date +%s)
-banner "Server Control dashboard deploy (${DOMAIN})"
+banner "Indra deploy (${DOMAIN})"
 
 # --- Optional git pull -------------------------------------------------------------
 if [ -d "${APP_ROOT}/.git" ] && command -v git &>/dev/null; then
@@ -84,7 +84,8 @@ if [ ! -f "${ECOSYSTEM}" ]; then
     exit 1
 fi
 
-step "Stopping existing server-dashboard process…"
+step "Stopping existing Indra process…"
+pm2 delete indra >/dev/null 2>&1 || true
 pm2 delete server-dashboard >/dev/null 2>&1 || true
 
 step "Freeing port ${PORT}…"
@@ -106,7 +107,7 @@ HTTP_CODE="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/" 
 if [ "${HTTP_CODE}" = "200" ] || [ "${HTTP_CODE}" = "401" ]; then
     info "Health check OK (HTTP ${HTTP_CODE}): http://127.0.0.1:${PORT}/"
 else
-    warn "Health check failed (HTTP ${HTTP_CODE}) — check: cd ${APP_ROOT} && pm2 logs server-dashboard"
+    warn "Health check failed (HTTP ${HTTP_CODE}) — check: cd ${APP_ROOT} && pm2 logs indra"
 fi
 
 if [ "${SKIP_NGINX:-0}" = "1" ]; then
@@ -264,11 +265,11 @@ info "Deployment complete."
 cat <<EOF
 
 Live URLs:
-  Dashboard:  https://${DOMAIN}/
+  Indra:      https://${DOMAIN}/
   Local:      http://127.0.0.1:${PORT}/
 
 Useful commands:
   pm2 status
-  pm2 logs server-dashboard
-  pm2 restart server-dashboard
+  pm2 logs indra
+  pm2 restart indra
 EOF

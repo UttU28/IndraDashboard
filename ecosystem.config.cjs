@@ -11,7 +11,7 @@ const port = process.env.DASHBOARD_PORT || "9282";
 module.exports = {
   apps: [
     {
-      name: "server-dashboard",
+      name: "indra",
       cwd: ROOT,
       script: path.join(ROOT, "venv/bin/python"),
       args: ["-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", String(port)],

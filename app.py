@@ -1,4 +1,4 @@
-"""Server Dashboard — one pane to view/control all Desktop projects.
+"""Indra — one pane to view/control all Desktop projects.
 
 Status (PM2 + Docker + ports + domains) and actions (restart/rebuild/stop/
 start/logs/deploy/pull) for every project defined in projects.yaml.
@@ -46,7 +46,7 @@ ALLOW_SUDO_PASSWORD = os.getenv("ALLOW_SUDO_PASSWORD", "0").strip().lower() in (
 DOMAIN_TIMEOUT = float(os.getenv("DASH_DOMAIN_TIMEOUT", "4"))
 PORT_TIMEOUT = float(os.getenv("DASH_PORT_TIMEOUT", "0.4"))
 
-app = FastAPI(title="Server Dashboard", docs_url=None, redoc_url=None)
+app = FastAPI(title="Indra", docs_url=None, redoc_url=None)
 security = HTTPBasic(auto_error=False)
 
 
