@@ -112,7 +112,7 @@ projects:
       - { port: 9261, label: ui }
     domains:
       - https://saral.thatinsaneguy.com
-    deploy: { script: ~/Desktop/Saral-Job-Viewer/deploy.sh, sudo: true, safe: false }
+    deploy: { script: ~/Desktop/Saral-Job-Viewer/backend/deploy.sh, sudo: true, safe: false }
 
   - id: moviecontroller
     name: Movie Controller

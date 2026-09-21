@@ -63,14 +63,28 @@ if [ ! -f "requirements.txt" ]; then
     exit 1
 fi
 
-if [ ! -d "venv" ]; then
-    step "Creating venv…"
+# Recreate if missing, or if activate still points at an old path (e.g. after
+# rename serverDashboard → Indra), or if the interpreter/pip are unusable.
+venv_ok=0
+if [ -x "venv/bin/python" ] && [ -f "venv/bin/activate" ]; then
+    if grep -q "VIRTUAL_ENV=${APP_ROOT}/venv\$" venv/bin/activate 2>/dev/null \
+        || grep -q "export VIRTUAL_ENV=${APP_ROOT}/venv" venv/bin/activate 2>/dev/null; then
+        if venv/bin/python -c "import sys" >/dev/null 2>&1; then
+            venv_ok=1
+        fi
+    fi
+fi
+
+if [ "${venv_ok}" -ne 1 ]; then
+    step "Creating / recreating venv in ${APP_ROOT}/venv…"
+    rm -rf venv
     python3 -m venv venv
 fi
-# shellcheck disable=SC1091
-source venv/bin/activate
-pip install --upgrade pip >/dev/null
-pip install -r requirements.txt
+
+# Always use the venv interpreter — never bare `pip` (Arch PEP 668 blocks system pip).
+step "Installing Python dependencies…"
+venv/bin/python -m pip install --upgrade pip >/dev/null
+venv/bin/python -m pip install -r requirements.txt
 
 # --- PM2 ---------------------------------------------------------------------------
 banner "PM2 (uvicorn)"
