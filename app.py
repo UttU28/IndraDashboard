@@ -8,6 +8,7 @@ PM2 and Docker actions need no sudo. Full deploy.sh needs sudo; see README.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import secrets
@@ -20,9 +21,10 @@ from pathlib import Path
 from typing import Any
 
 import requests
+import websockets
 import yaml
-from fastapi import Depends, FastAPI, HTTPException, status
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, status
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
@@ -142,6 +144,59 @@ def systemd_active(unit: str) -> bool:
         return False
 
 
+def argo_applications() -> dict[str, Any]:
+    """Read-only Argo CD application status from the local cluster."""
+    try:
+        out = subprocess.run(
+            ["kubectl", "get", "applications", "-n", "argocd", "-o", "json"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc), "apps": []}
+    if out.returncode != 0:
+        err = (out.stderr or out.stdout or "kubectl failed").strip()
+        return {"ok": False, "error": err, "apps": []}
+    try:
+        data = json.loads(out.stdout or "{}")
+    except json.JSONDecodeError as exc:
+        return {"ok": False, "error": f"bad kubectl json: {exc}", "apps": []}
+
+    apps: list[dict[str, Any]] = []
+    for item in data.get("items") or []:
+        meta = item.get("metadata") or {}
+        status_obj = item.get("status") or {}
+        source = (item.get("spec") or {}).get("source") or {}
+        sync = (status_obj.get("sync") or {}).get("status") or "Unknown"
+        health = (status_obj.get("health") or {}).get("status") or "Unknown"
+        urls = []
+        for raw in (status_obj.get("summary") or {}).get("externalURLs") or []:
+            if not isinstance(raw, str) or any(ch in raw for ch in "()$"):
+                continue
+            urls.append(raw.rstrip("/"))
+        if sync == "Synced" and health == "Healthy":
+            state = "up"
+        elif health in ("Degraded", "Missing"):
+            state = "down"
+        else:
+            state = "partial"
+        revision = (status_obj.get("sync") or {}).get("revision") or ""
+        apps.append(
+            {
+                "name": meta.get("name") or "?",
+                "sync": sync,
+                "health": health,
+                "path": source.get("path") or "",
+                "revision": revision[:7],
+                "urls": urls,
+                "state": state,
+            }
+        )
+    apps.sort(key=lambda a: a["name"])
+    return {"ok": True, "apps": apps}
+
+
 def collect_status() -> dict[str, Any]:
     cfg = load_config()
     pm2 = pm2_map()
@@ -226,7 +281,12 @@ def collect_status() -> dict[str, Any]:
             ]
         infra.append(entry)
 
-    return {"projects": projects, "infra": infra, "ts": int(time.time())}
+    return {
+        "projects": projects,
+        "infra": infra,
+        "argo": argo_applications(),
+        "ts": int(time.time()),
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -584,6 +644,143 @@ def _run_job(job_id: str, cmds: list[str], action: str) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Argo CD UI on this same host (/argocd/)
+# --------------------------------------------------------------------------- #
+_ARGO_SKIP_HEADERS = {
+    "connection",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "te",
+    "trailers",
+    "transfer-encoding",
+    "upgrade",
+    "host",
+    "content-length",
+    "content-encoding",
+}
+_ARGO_IP = {"ip": "", "at": 0.0}
+_ARGO_IP_LOCK = threading.Lock()
+
+
+def argocd_cluster_ip() -> str:
+    now = time.time()
+    with _ARGO_IP_LOCK:
+        if _ARGO_IP["ip"] and now - _ARGO_IP["at"] < 30:
+            return _ARGO_IP["ip"]
+    out = subprocess.run(
+        [
+            "kubectl",
+            "get",
+            "svc",
+            "argocd-server",
+            "-n",
+            "argocd",
+            "-o",
+            "jsonpath={.spec.clusterIP}",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    ip = (out.stdout or "").strip()
+    if out.returncode != 0 or not ip:
+        raise HTTPException(502, (out.stderr or "Argo CD service not found").strip())
+    with _ARGO_IP_LOCK:
+        _ARGO_IP["ip"] = ip
+        _ARGO_IP["at"] = time.time()
+    return ip
+
+
+def _argocd_request_headers(request: Request) -> dict[str, str]:
+    headers: dict[str, str] = {}
+    for key, value in request.headers.items():
+        if key.lower() in _ARGO_SKIP_HEADERS:
+            continue
+        headers[key] = value
+    headers["Accept-Encoding"] = "identity"
+    headers["X-Forwarded-Proto"] = request.headers.get("x-forwarded-proto") or request.url.scheme
+    headers["X-Forwarded-Host"] = request.headers.get("host", "")
+    return headers
+
+
+def _rewrite_argocd_location(value: str, ip: str) -> str:
+    for prefix in (f"http://{ip}/argocd", f"https://{ip}/argocd"):
+        if value.startswith(prefix):
+            return "/argocd" + value[len(prefix) :]
+    return value
+
+
+def _argocd_response(upstream: requests.Response, ip: str, body: bytes | None, stream):
+    pairs: list[tuple[bytes, bytes]] = []
+    for key, value in upstream.raw.headers.items():
+        if isinstance(key, bytes):
+            key = key.decode("latin1")
+        if isinstance(value, bytes):
+            value = value.decode("latin1")
+        if key.lower() in _ARGO_SKIP_HEADERS:
+            continue
+        if key.lower() == "location":
+            value = _rewrite_argocd_location(value, ip)
+        pairs.append((key.encode("latin1"), value.encode("latin1")))
+    if body is not None:
+        response = StreamingResponse(iter([body]), status_code=upstream.status_code)
+        upstream.close()
+    else:
+        response = StreamingResponse(stream, status_code=upstream.status_code)
+    response.raw_headers = pairs
+    return response
+
+
+def _proxy_argocd(request: Request, path: str, body: bytes):
+    # Theme file is read on each request so edits apply on refresh.
+    if path.strip("/") == "indra.css":
+        css_path = BASE_DIR / "argocd-theme.css"
+        if not css_path.is_file():
+            raise HTTPException(404, "Argo theme CSS is missing")
+        return Response(
+            css_path.read_bytes(),
+            media_type="text/css",
+            headers={"Cache-Control": "no-cache"},
+        )
+
+    ip = argocd_cluster_ip()
+    url = f"http://{ip}/argocd/{path}"
+    if request.url.query:
+        url += "?" + request.url.query
+    try:
+        upstream = requests.request(
+            request.method,
+            url,
+            headers=_argocd_request_headers(request),
+            data=body,
+            stream=True,
+            allow_redirects=False,
+            timeout=(10, None),
+        )
+    except requests.RequestException as exc:
+        raise HTTPException(502, f"Argo CD proxy failed: {exc}") from exc
+
+    ctype = upstream.headers.get("content-type", "")
+    if "text/html" in ctype:
+        text = upstream.content.decode("utf-8", "replace")
+        text = text.replace('<base href="/">', '<base href="/argocd/">', 1)
+        theme = '<link rel="stylesheet" href="/argocd/indra.css">'
+        text = text.replace("</head>", theme + "</head>", 1)
+        return _argocd_response(upstream, ip, text.encode(), None)
+
+    def chunks():
+        try:
+            for chunk in upstream.iter_content(65536):
+                if chunk:
+                    yield chunk
+        finally:
+            upstream.close()
+
+    return _argocd_response(upstream, ip, None, chunks())
+
+
+# --------------------------------------------------------------------------- #
 # Routes
 # --------------------------------------------------------------------------- #
 @app.get("/api/status")
@@ -655,6 +852,89 @@ def api_job(job_id: str, _: None = Depends(_auth)) -> JSONResponse:
 @app.get("/")
 def index(_: None = Depends(_auth)) -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.api_route("/argocd", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"])
+def argocd_root(_: None = Depends(_auth)) -> RedirectResponse:
+    return RedirectResponse("/argocd/", status_code=307)
+
+
+@app.api_route(
+    "/argocd/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"],
+)
+async def argocd_proxy(path: str, request: Request, _: None = Depends(_auth)):
+    body = await request.body()
+    return await asyncio.to_thread(_proxy_argocd, request, path, body)
+
+
+@app.websocket("/argocd/{path:path}")
+async def argocd_terminal(websocket: WebSocket, path: str) -> None:
+    await websocket.accept()
+    try:
+        ip = argocd_cluster_ip()
+    except HTTPException:
+        await websocket.close(code=1011)
+        return
+    query = websocket.scope.get("query_string", b"").decode()
+    url = f"ws://{ip}/argocd/{path}"
+    if query:
+        url += "?" + query
+    headers = [
+        (key, value)
+        for key, value in websocket.headers.items()
+        if key.lower()
+        not in {
+            "host",
+            "connection",
+            "upgrade",
+            "sec-websocket-key",
+            "sec-websocket-version",
+            "sec-websocket-extensions",
+        }
+    ]
+    try:
+        async with websockets.connect(
+            url,
+            additional_headers=headers,
+            proxy=None,
+            open_timeout=10,
+            max_size=8 * 1024 * 1024,
+        ) as upstream:
+            async def client_to_server() -> None:
+                while True:
+                    message = await websocket.receive()
+                    if message["type"] == "websocket.disconnect":
+                        break
+                    if message.get("text") is not None:
+                        await upstream.send(message["text"])
+                    elif message.get("bytes") is not None:
+                        await upstream.send(message["bytes"])
+
+            async def server_to_client() -> None:
+                async for message in upstream:
+                    if isinstance(message, bytes):
+                        await websocket.send_bytes(message)
+                    else:
+                        await websocket.send_text(message)
+
+            done, pending = await asyncio.wait(
+                {
+                    asyncio.create_task(client_to_server()),
+                    asyncio.create_task(server_to_client()),
+                },
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in pending:
+                task.cancel()
+            for task in done:
+                task.result()
+    except Exception:
+        pass
+    try:
+        await websocket.close()
+    except Exception:
+        pass
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

@@ -40,18 +40,6 @@ projects:
     # Full nginx/SSL deploy — use from a terminal: sudo bash ~/Desktop/Apeksha/deploy.sh
     deploy: { script: ~/Desktop/Apeksha/deploy.sh, sudo: true, safe: false }
 
-  - id: linkitup
-    name: LinkItUp
-    category: web-app
-    git_repos: [~/Desktop/LinkedIn_Reverse_Search]
-    pm2: [link-frontend, link-backend]
-    ports:
-      - { port: 9220, label: frontend }
-      - { port: 9221, label: api }
-    domains:
-      - https://linkitup.thatinsaneguy.com
-    deploy: { script: ~/Desktop/LinkedIn_Reverse_Search/deploy.sh, sudo: true, safe: false }
-
   - id: habittracker
     name: Habit Tracker
     category: web-app
@@ -97,39 +85,6 @@ projects:
     domains: []
     deploy: { script: ~/Desktop/resumeForge/deploy.sh, sudo: true, safe: false }
     notes: PM2 name is resumeforge-frontend (not generic "frontend").
-
-  - id: saral
-    name: Saral Job Viewer
-    category: web-app
-    git_repos: [~/Desktop/Saral-Job-Viewer]
-    docker:
-      dir: ~/Desktop/Saral-Job-Viewer
-      containers: [saral-api, saral-ui, saral-redis]
-      # Never include nginx/certbot — those bind host :80/:443 and clash with system nginx.
-      compose_services: [sjv-redis, api, frontend]
-    ports:
-      - { port: 9260, label: api }
-      - { port: 9261, label: ui }
-    domains:
-      - https://saral.thatinsaneguy.com
-    deploy: { script: ~/Desktop/Saral-Job-Viewer/backend/deploy.sh, sudo: true, safe: false }
-
-  - id: moviecontroller
-    name: Movie Controller
-    category: web-app
-    git_repos: [~/Desktop/movieController]
-    pm2: [moviecontroller-frontend, moviecontroller-backend]
-    ports:
-      - { port: 9280, label: frontend }
-      - { port: 9281, label: api-lan }
-    domains:
-      - https://control.thatinsaneguy.com
-    deploy:
-      script: ~/Desktop/movieController/deploy.sh
-      sudo: true
-      safe: false
-      args: ["0"]
-    notes: PM2 names appear after first deploy.
 
   - id: nextcloud
     name: Nextcloud

@@ -1,0 +1,179 @@
+/*
+  Indra look for the Argo CD UI.
+  Served at /argocd/indra.css. Edit this file and refresh the Argo page.
+  No image rebuild. Health colors (green / red / yellow) are left alone.
+*/
+
+:root {
+  --indra-bg: #070a12;
+  --indra-surface: #0e131f;
+  --indra-raised: #151c2b;
+  --indra-line: rgba(148, 163, 184, .16);
+  --indra-text: #f4f7fb;
+  --indra-soft: #c3ccda;
+  --indra-muted: #77849a;
+  --indra-accent: #818cf8;
+  --indra-accent-2: #22d3ee;
+}
+
+html,
+body,
+.theme-light,
+.theme-dark,
+.layout,
+.cd-layout,
+.theme-light .layout,
+.theme-dark .layout,
+.theme-light .cd-layout,
+.theme-dark .cd-layout {
+  background:
+    radial-gradient(900px 500px at 12% -10%, rgba(79, 70, 229, .16), transparent 62%),
+    radial-gradient(800px 500px at 96% 4%, rgba(6, 182, 212, .09), transparent 58%),
+    var(--indra-bg) !important;
+  color: var(--indra-text);
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.sidebar {
+  background: var(--indra-surface) !important;
+  border-right: 1px solid var(--indra-line);
+  color: var(--indra-soft) !important;
+}
+
+.sidebar__nav-item {
+  color: var(--indra-muted) !important;
+  border-radius: 10px;
+}
+
+.sidebar__nav-item--active,
+.sidebar__nav-item--active i {
+  color: var(--indra-text) !important;
+}
+
+.sidebar__nav-item--active {
+  background: rgba(129, 140, 248, .14);
+}
+
+.sidebar__logo__character,
+.sidebar__nav-item--active i {
+  color: var(--indra-accent) !important;
+}
+
+.top-bar,
+.page__top-bar,
+.theme-dark .top-bar,
+.theme-light .top-bar {
+  background: rgba(7, 10, 18, .92) !important;
+  border-color: var(--indra-line) !important;
+  backdrop-filter: blur(16px);
+}
+
+.top-bar__title,
+.theme-dark .top-bar__title,
+.theme-light .top-bar__title {
+  color: var(--indra-accent) !important;
+}
+
+.top-bar__breadcrumbs,
+.theme-dark .top-bar__breadcrumbs {
+  color: var(--indra-soft) !important;
+}
+
+.white-box,
+.theme-dark .white-box,
+.theme-light .white-box,
+.sliding-panel,
+.sliding-panel__body,
+.sliding-panel__header,
+.sliding-panel__footer {
+  background: var(--indra-raised) !important;
+  color: var(--indra-text) !important;
+  border: 1px solid var(--indra-line) !important;
+  border-radius: 16px;
+}
+
+.theme-dark .white-box__details-row,
+.theme-light .white-box__details-row,
+.applications-list__title,
+.theme-dark .applications-list__title {
+  color: var(--indra-text) !important;
+}
+
+.theme-dark .white-box__details-row .columns,
+.theme-light .white-box__details-row .columns {
+  border-bottom-color: var(--indra-line) !important;
+}
+
+.applications-list__search,
+.theme-dark .applications-list__search-wrapper .applications-list__search,
+.argo-field,
+.argo-textarea,
+.theme-dark .argo-field,
+.theme-dark .argo-textarea,
+input,
+select,
+textarea {
+  background: #101726 !important;
+  color: var(--indra-text) !important;
+  border-color: var(--indra-line) !important;
+  border-radius: 10px;
+}
+
+.argo-button {
+  border-radius: 10px !important;
+}
+
+.argo-button--base,
+.argo-button--special {
+  background: rgba(129, 140, 248, .2) !important;
+  color: var(--indra-text) !important;
+  border: 1px solid rgba(129, 140, 248, .45) !important;
+  box-shadow: none !important;
+}
+
+.argo-button--base:not(.disabled):not([disabled]):hover,
+.argo-button--special:not(.disabled):not([disabled]):hover {
+  background: rgba(129, 140, 248, .32) !important;
+  color: var(--indra-text) !important;
+}
+
+.argo-button--base-o {
+  color: var(--indra-accent) !important;
+  background: transparent !important;
+  box-shadow: inset 0 0 0 1px rgba(129, 140, 248, .45) !important;
+}
+
+.login {
+  background:
+    radial-gradient(900px 500px at 12% -10%, rgba(79, 70, 229, .22), transparent 62%),
+    #070a12 !important;
+}
+
+.login__text {
+  color: var(--indra-text) !important;
+  font-weight: 600 !important;
+}
+
+.login__box {
+  background: var(--indra-surface) !important;
+  color: var(--indra-text) !important;
+  border-left: 1px solid var(--indra-line) !important;
+}
+
+.login__box h3,
+.login__box h4,
+.login__box h5 {
+  color: var(--indra-accent) !important;
+}
+
+.login__box .argo-field,
+.login__box input {
+  background: transparent !important;
+  color: var(--indra-text) !important;
+  border-bottom: 2px solid rgba(129, 140, 248, .45) !important;
+}
+
+.login__footer,
+.login__more-row a {
+  color: var(--indra-muted) !important;
+}

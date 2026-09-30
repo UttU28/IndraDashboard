@@ -125,6 +125,8 @@
   .toggle input:checked { background: rgba(52,211,153,.18); border-color: rgba(52,211,153,.35); }
   .toggle input:checked::after { transform: translateX(13px); background: var(--up); box-shadow: 0 0 10px rgba(52,211,153,.5); }
   main { padding: 28px 24px 70px; max-width: 1508px; margin: 0 auto; position: relative; }
+  .section-row { display: flex; align-items: center; gap: 12px; margin: 30px 3px 11px; }
+  .section-row .section-title { margin: 0; flex: 1; }
   .section-title {
     color: #92a0b6; text-transform: uppercase; letter-spacing: .13em; font-weight: 700;
     font-size: 10.5px; margin: 30px 3px 11px; display: flex; align-items: center; gap: 10px;
@@ -355,6 +357,37 @@ function card(p) {
   </div>`;
 }
 
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+
+function argoCard(a) {
+  const syncCls = a.sync === "Synced" ? "ok" : "warn";
+  const healthCls = a.health === "Healthy" ? "ok" : (a.state === "down" ? "bad" : "warn");
+  const urls = (a.urls || []).map(u =>
+    `<a class="dom" href="${esc(u)}" target="_blank" rel="noopener">${esc(u.replace(/^https?:\/\//, ""))}</a>`
+  ).join(" ");
+  const rows = [
+    `<div class="row"><span class="lbl">sync</span><span class="pill ${syncCls}">${esc(a.sync)}</span></div>`,
+    `<div class="row"><span class="lbl">health</span><span class="pill ${healthCls}">${esc(a.health)}</span></div>`,
+  ];
+  if (a.path)
+    rows.push(`<div class="row"><span class="lbl">path</span><span class="pill">${esc(a.path)}</span></div>`);
+  if (a.revision)
+    rows.push(`<div class="row"><span class="lbl">rev</span><span class="pill">${esc(a.revision)}</span></div>`);
+  if (urls)
+    rows.push(`<div class="row"><span class="lbl">web</span>${urls}</div>`);
+  return `<div class="card">
+    <div class="card-head">
+      <span class="dot ${esc(a.state)}" title="${esc(a.sync)} · ${esc(a.health)}"></span>
+      <h3>${esc(a.name)}</h3><span class="cat">argo</span>
+    </div>
+    <div class="rows">${rows.join("")}</div>
+  </div>`;
+}
+
 function infraCard(i) {
   const rows = [];
   if ("active" in i)
@@ -376,11 +409,17 @@ async function render() {
     const cats = { "web-app": [], "self-hosted": [], "lan-device": [] };
     d.projects.forEach(p => (cats[p.category] || (cats[p.category] = [])).push(p));
 
+    const argoApps = (d.argo && d.argo.apps) || [];
     let up = 0, down = 0, part = 0;
     d.projects.forEach(p => {
       if (p.health === "up") up++;
       else if (p.health === "down") down++;
       else if (p.health === "partial") part++;
+    });
+    argoApps.forEach(a => {
+      if (a.state === "up") up++;
+      else if (a.state === "down") down++;
+      else part++;
     });
     $("#counts").innerHTML =
       `<span><b>${up}</b> up</span><span><b>${part}</b> partial</span>` +
@@ -393,6 +432,16 @@ async function render() {
       if (!cats[key] || !cats[key].length) continue;
       html += `<div class="section-title">${titles[key]}</div><div class="grid">` +
         cats[key].map(card).join("") + `</div>`;
+    }
+    const argoHead = `<div class="section-row"><div class="section-title">Argo CD</div><a class="btn small" href="/argocd/">Manage</a></div>`;
+    if (d.argo && d.argo.ok && argoApps.length) {
+      html += argoHead + `<div class="grid">` +
+        argoApps.map(argoCard).join("") + `</div>`;
+    } else if (d.argo && !d.argo.ok) {
+      html += argoHead + `<div class="grid"><div class="card">
+        <div class="card-head"><span class="dot down"></span><h3>Argo CD</h3><span class="cat">argo</span></div>
+        <div class="rows"><div class="row muted">${esc(d.argo.error || "unreachable")}</div></div>
+      </div></div>`;
     }
     if (d.infra && d.infra.length)
       html += `<div class="section-title">Infrastructure</div><div class="grid">` +
