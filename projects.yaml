@@ -28,12 +28,11 @@ projects:
     pm2: [apeksha-frontend]
     docker:
       dir: ~/Desktop/Apeksha/backend/deploy
-      containers: [livekit-server, bhasini-translation-api]
-      compose_services: [livekit, bhasini-api]
+      containers: [bhasini-translation-api]
+      compose_services: [bhasini-api]
     ports:
       - { port: 9200, label: frontend }
       - { port: 9201, label: api }
-      - { port: 7880, label: livekit }
     domains:
       - https://apeksha.thatinsaneguy.com
       - https://apekshaapi.thatinsaneguy.com
