@@ -340,7 +340,21 @@ def _pm2_cmd(action: str, names: list[str], bootstrap: str | None = None) -> str
     return f"pm2 {pm2_action} {names_s}"
 
 
+def _compose_env_file(d: dict[str, Any] | None, ddir: str) -> str | None:
+    """Compose interpolates ${VAR} from --env-file; service env_file is not enough."""
+    if d and d.get("env_file"):
+        path = expand(str(d["env_file"]))
+        return path if Path(path).is_file() else None
+    for candidate in (Path(ddir) / ".env", Path(ddir).parent / ".env"):
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
 def _docker_compose_cmd(ddir: str, base: str, d: dict[str, Any] | None) -> str:
+    env_file = _compose_env_file(d, ddir)
+    if env_file:
+        base = base.replace("docker compose ", f"docker compose --env-file {env_file!r} ", 1)
     svc = _compose_service_args(d)
     if svc:
         return f"cd {ddir!r} && {base} {svc}"
@@ -376,17 +390,21 @@ def _build_commands(p: dict[str, Any], action: str, sudo_pw: str | None) -> list
             cmds.append(
                 _docker_compose_cmd(ddir, "docker compose up -d --build", d)
             )
-        app_dir = expand(p.get("app_dir") or "")
-        if not app_dir and p.get("git_repos"):
-            app_dir = expand(p["git_repos"][0])
-        venv_py = Path(app_dir, "venv/bin/python") if app_dir else None
-        reqs = Path(app_dir, "requirements.txt") if app_dir else None
-        if venv_py and venv_py.exists() and reqs and reqs.is_file():
-            cmds.append(
-                f"cd {app_dir!r} && venv/bin/python -m pip install -r requirements.txt"
-            )
-        if pm2_names:
-            cmds.append(f"pm2 restart {' '.join(pm2_names)}")
+        extra = p.get("rebuild") or []
+        for raw in extra:
+            cmds.append(os.path.expanduser(os.path.expandvars(str(raw))))
+        if not extra:
+            app_dir = expand(p.get("app_dir") or "")
+            if not app_dir and p.get("git_repos"):
+                app_dir = expand(p["git_repos"][0])
+            venv_py = Path(app_dir, "venv/bin/python") if app_dir else None
+            reqs = Path(app_dir, "requirements.txt") if app_dir else None
+            if venv_py and venv_py.exists() and reqs and reqs.is_file():
+                cmds.append(
+                    f"cd {app_dir!r} && venv/bin/python -m pip install -r requirements.txt"
+                )
+            if pm2_names:
+                cmds.append(f"pm2 restart {' '.join(pm2_names)}")
     elif action == "logs":
         if pm2_names:
             cmds.append(f"pm2 logs {' '.join(pm2_names)} --lines 120 --nostream")
@@ -495,7 +513,49 @@ def _git_stream(
         return 1
 
 
-def _run_pull_job(job_id: str, repos: list[str]) -> None:
+def _stream_cmds(cmds: list[str], append, action: str) -> int:
+    worst_rc = 0
+    for cmd in cmds:
+        shown = cmd
+        if cmd.startswith("echo '") and "| sudo -S" in cmd:
+            shown = "sudo -S " + cmd.split("| sudo -S -p '' ", 1)[-1]
+        append(f"\n$ {shown}\n")
+        rc = 0
+        try:
+            proc = subprocess.Popen(
+                ["bash", "-lc", cmd],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+            )
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                append(line)
+            proc.wait(timeout=900)
+            rc = proc.returncode or 0
+        except subprocess.TimeoutExpired:
+            append("\n[timed out after 900s]\n")
+            rc = 124
+        except Exception as exc:  # noqa: BLE001
+            append(f"\n[error: {exc!r}]\n")
+            rc = 1
+        if rc != 0:
+            worst_rc = rc
+            if action == "deploy" and "sudo -n" in cmd:
+                append(
+                    "\n[sudo requires a password] Run this in a terminal instead:\n"
+                    f"  {cmd.replace('sudo -n', 'sudo')}\n"
+                    "Or enable ALLOW_SUDO_PASSWORD and use the password field.\n"
+                )
+                break
+            if action == "deploy":
+                break
+            append(f"\n[continuing despite exit {rc}]\n")
+    return worst_rc
+
+
+def _run_pull_job(job_id: str, project: dict[str, Any], repos: list[str]) -> None:
     def append(text: str) -> None:
         with JOBS_LOCK:
             JOBS[job_id]["output"] += text
@@ -503,11 +563,12 @@ def _run_pull_job(job_id: str, repos: list[str]) -> None:
     worst_rc = 0
     updated = False
     conflicts = False
+    applied = False
     desktop = expand("~/Desktop")
 
     append(
         "Stash local changes → pull remote updates → stash pop.\n"
-        "Your running system is untouched until you Rebuild/Restart.\n\n"
+        "If git brought new commits, Rebuild runs in this same log.\n\n"
     )
 
     for repo in repos:
@@ -593,11 +654,34 @@ def _run_pull_job(job_id: str, repos: list[str]) -> None:
         else:
             append("stash pop: ok (local changes restored)\n")
 
+    if updated and not conflicts and worst_rc == 0:
+        apply_action = (
+            "rebuild"
+            if project.get("docker") or project.get("pm2")
+            else None
+        )
+        if apply_action:
+            try:
+                cmds = _build_commands(project, apply_action, None)
+            except ValueError as exc:
+                append(f"\n[skip apply: {exc}]\n")
+                cmds = []
+            if cmds:
+                append(f"\n=== apply updates ({apply_action}) ===\n")
+                apply_rc = _stream_cmds(cmds, append, apply_action)
+                worst_rc = max(worst_rc, apply_rc)
+                applied = apply_rc == 0
+                if applied:
+                    append(f"\n{apply_action}: ok — updates are live\n")
+                else:
+                    append(f"\n{apply_action}: failed (exit {apply_rc})\n")
+
     with JOBS_LOCK:
         JOBS[job_id]["rc"] = worst_rc
         JOBS[job_id]["done"] = True
-        JOBS[job_id]["updated"] = updated and worst_rc == 0 and not conflicts
+        JOBS[job_id]["updated"] = updated and not conflicts
         JOBS[job_id]["conflicts"] = conflicts
+        JOBS[job_id]["applied"] = applied
         JOBS[job_id]["finished"] = int(time.time())
 
 
@@ -606,47 +690,7 @@ def _run_job(job_id: str, cmds: list[str], action: str) -> None:
         with JOBS_LOCK:
             JOBS[job_id]["output"] += text
 
-    worst_rc = 0
-    for cmd in cmds:
-        # Redact any inlined sudo password before showing the command.
-        shown = cmd
-        if cmd.startswith("echo '") and "| sudo -S" in cmd:
-            shown = "sudo -S " + cmd.split("| sudo -S -p '' ", 1)[-1]
-        append(f"\n$ {shown}\n")
-        rc = 0
-        try:
-            proc = subprocess.Popen(
-                ["bash", "-lc", cmd],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-            )
-            assert proc.stdout is not None
-            for line in proc.stdout:
-                append(line)
-            proc.wait(timeout=900)
-            rc = proc.returncode or 0
-        except subprocess.TimeoutExpired:
-            append("\n[timed out after 900s]\n")
-            rc = 124
-        except Exception as exc:  # noqa: BLE001
-            append(f"\n[error: {exc!r}]\n")
-            rc = 1
-        if rc != 0:
-            worst_rc = rc
-            if action == "deploy" and "sudo -n" in cmd:
-                append(
-                    "\n[sudo requires a password] Run this in a terminal instead:\n"
-                    f"  {cmd.replace('sudo -n', 'sudo')}\n"
-                    "Or enable ALLOW_SUDO_PASSWORD and use the password field.\n"
-                )
-                break
-            # Keep going for restart/start so a missing PM2 process does not
-            # skip the Docker half of a mixed project.
-            if action == "deploy":
-                break
-            append(f"\n[continuing despite exit {rc}]\n")
+    worst_rc = _stream_cmds(cmds, append, action)
 
     with JOBS_LOCK:
         JOBS[job_id]["rc"] = worst_rc
@@ -822,10 +866,11 @@ def api_action(payload: dict[str, Any], _: None = Depends(_auth)) -> JSONRespons
                 "done": False,
                 "updated": False,
                 "conflicts": False,
+                "applied": False,
                 "started": int(time.time()),
             }
         threading.Thread(
-            target=_run_pull_job, args=(job_id, repos), daemon=True
+            target=_run_pull_job, args=(job_id, p, repos), daemon=True
         ).start()
         return JSONResponse({"job": job_id})
 

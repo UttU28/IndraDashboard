@@ -7,9 +7,11 @@
 #   pm2       : list of PM2 process names (managed as your user, no sudo)
 #   docker    :
 #     dir              : compose directory
+#     env_file         : optional; passed as `docker compose --env-file` (for ${VAR} mounts)
 #     containers       : docker ps names (status pills)
 #     compose_services : compose service names used by start/stop/restart/rebuild/logs
 #                        REQUIRED for start/rebuild (refuses unscoped `up`)
+#   rebuild   : extra shell commands after docker (e.g. Next.js npm build + PM2)
 #   ports     : list of { port, label } checked on 127.0.0.1
 #   domains   : list of https URLs to health-check (HTTP status)
 #   deploy    : { script, sudo, safe, args? }
@@ -39,8 +41,11 @@ projects:
     pm2: [apeksha-frontend]
     docker:
       dir: ~/Desktop/Apeksha/backend/deploy
+      env_file: ~/Desktop/Apeksha/backend/.env
       containers: [bhasini-translation-api]
       compose_services: [bhasini-api]
+    rebuild:
+      - SKIP_NGINX=1 bash ~/Desktop/Apeksha/frontend/deploy.sh --skip-nginx
     ports:
       - { port: 9200, label: frontend }
       - { port: 9201, label: api }

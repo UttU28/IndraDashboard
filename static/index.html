@@ -512,7 +512,7 @@ async function poll(job, project, action) {
       } else {
         statusEl.textContent = j.rc === 0 ? "✓ done" : `✗ exit ${j.rc}`;
       }
-      if (action === "pull" && j.updated && !j.conflicts) {
+      if (action === "pull" && j.updated && !j.conflicts && !j.applied) {
         const proj = (lastStatus?.projects || []).find(p => p.id === project);
         suggestedAfterPull[project] = proj?.has_rebuild ? "rebuild" : "restart";
       }
