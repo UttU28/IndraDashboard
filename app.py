@@ -503,7 +503,8 @@ def _run_pull_job(job_id: str, repos: list[str]) -> None:
     for repo in repos:
         rel = repo.replace(desktop + "/", "")
         append(f"\n=== {rel or repo} ===\n")
-        if not Path(repo, ".git").is_dir():
+        git_meta = Path(repo, ".git")
+        if not git_meta.is_dir() and not git_meta.is_file():
             append("[skip: not a git repo]\n")
             worst_rc = max(worst_rc, 1)
             continue

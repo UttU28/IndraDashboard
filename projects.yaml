@@ -15,16 +15,14 @@
 #   deploy    : { script, sudo, safe, args? }
 #               Deploy button only shows when safe: true
 #   git_repos : list of repo paths to `git pull --ff-only` (Pull button)
-#               e.g. Apeksha has separate frontend + backend repos
+#               e.g. Apeksha is one repo (frontend + backend in the same tree)
 #   notes     : optional string
 
 projects:
   - id: apeksha
     name: Apeksha
     category: web-app
-    git_repos:
-      - ~/Desktop/Apeksha/backend
-      - ~/Desktop/Apeksha/frontend
+    git_repos: [~/Desktop/Apeksha]
     pm2: [apeksha-frontend]
     docker:
       dir: ~/Desktop/Apeksha/backend/deploy
