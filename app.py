@@ -259,6 +259,7 @@ def collect_status() -> dict[str, Any]:
                 "pm2": pm2_states,
                 "docker": docker_states,
                 "has_docker": bool(d),
+                "has_rebuild": bool(d) or bool(p.get("pm2")),
                 "ports": ports,
                 "domains": domains,
                 # Deploy only when explicitly marked safe (avoids interactive /
@@ -333,7 +334,7 @@ def _pm2_cmd(action: str, names: list[str], bootstrap: str | None = None) -> str
         )
         return (
             f"missing=0; {checks} "
-            f'if [ "$missing" = "1" ]; then bash {boot!r}; '
+            f'if [ "$missing" = "1" ]; then SKIP_NGINX=1 bash {boot!r}; '
             f"else pm2 {pm2_action} {names_s}; fi"
         )
     return f"pm2 {pm2_action} {names_s}"
@@ -374,6 +375,15 @@ def _build_commands(p: dict[str, Any], action: str, sudo_pw: str | None) -> list
         if ddir:
             cmds.append(
                 _docker_compose_cmd(ddir, "docker compose up -d --build", d)
+            )
+        app_dir = expand(p.get("app_dir") or "")
+        if not app_dir and p.get("git_repos"):
+            app_dir = expand(p["git_repos"][0])
+        venv_py = Path(app_dir, "venv/bin/python") if app_dir else None
+        reqs = Path(app_dir, "requirements.txt") if app_dir else None
+        if venv_py and venv_py.exists() and reqs and reqs.is_file():
+            cmds.append(
+                f"cd {app_dir!r} && venv/bin/python -m pip install -r requirements.txt"
             )
         if pm2_names:
             cmds.append(f"pm2 restart {' '.join(pm2_names)}")

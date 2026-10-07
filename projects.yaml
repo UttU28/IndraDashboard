@@ -19,6 +19,19 @@
 #   notes     : optional string
 
 projects:
+  - id: indra
+    name: Indra
+    category: web-app
+    git_repos: [~/Desktop/Indra]
+    pm2: [indra]
+    pm2_bootstrap: ~/Desktop/Indra/deploy.sh
+    ports:
+      - { port: 9282, label: ui }
+    domains:
+      - https://indra.thatinsaneguy.com
+    deploy: { script: ~/Desktop/Indra/deploy.sh, sudo: true, safe: false }
+    notes: This dashboard. Pull, then Rebuild (pip + PM2 restart). Full nginx/SSL stays in a terminal.
+
   - id: apeksha
     name: Apeksha
     category: web-app

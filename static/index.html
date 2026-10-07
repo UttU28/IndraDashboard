@@ -317,9 +317,9 @@ function card(p) {
     acts.push(`<button class="btn small" data-a="pull" data-p="${p.id}">Pull</button>`);
 
   if (controllable) {
-    const restartCls = suggest === "restart" && !p.has_docker ? " suggested" : "";
+    const restartCls = suggest === "restart" && !p.has_rebuild ? " suggested" : "";
     acts.push(`<button class="btn small${restartCls}" data-a="restart" data-p="${p.id}">Restart</button>`);
-    if (p.has_docker) {
+    if (p.has_rebuild) {
       const rebuildCls = suggest === "rebuild" ? " suggested" : "";
       acts.push(`<button class="btn small${rebuildCls}" data-a="rebuild" data-p="${p.id}">Rebuild</button>`);
     }
@@ -514,7 +514,7 @@ async function poll(job, project, action) {
       }
       if (action === "pull" && j.updated && !j.conflicts) {
         const proj = (lastStatus?.projects || []).find(p => p.id === project);
-        suggestedAfterPull[project] = proj?.has_docker ? "rebuild" : "restart";
+        suggestedAfterPull[project] = proj?.has_rebuild ? "rebuild" : "restart";
       }
       render();
       break;
