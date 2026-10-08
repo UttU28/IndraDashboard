@@ -32,7 +32,7 @@ projects:
     domains:
       - https://indra.thatinsaneguy.com
     deploy: { script: ~/Desktop/Indra/deploy.sh, sudo: true, safe: false }
-    notes: This dashboard. Pull, then Rebuild (pip + PM2 restart). Full nginx/SSL stays in a terminal.
+    notes: This dashboard — Pull, then Rebuild to update.
 
   - id: apeksha
     name: Apeksha
@@ -82,7 +82,7 @@ projects:
     domains:
       - https://meme.thatinsaneguy.com
     deploy: { script: ~/Desktop/MemeMaker/deploy.sh, sudo: true, safe: false }
-    notes: F5-TTS needs NVIDIA runtime. PM2 names appear after first deploy.
+    notes: F5-TTS needs the NVIDIA runtime.
 
   - id: resumeforge
     name: resumeForge
@@ -99,7 +99,24 @@ projects:
       - { port: 9241, label: api }
     domains: []
     deploy: { script: ~/Desktop/resumeForge/deploy.sh, sudo: true, safe: false }
-    notes: PM2 name is resumeforge-frontend (not generic "frontend").
+    notes: PM2 process is resumeforge-frontend.
+
+  - id: video2x
+    name: Video2X Studio
+    category: web-app
+    git_repos: [~/Desktop/video2x]
+    pm2: [video2x]
+    pm2_bootstrap: ~/Desktop/video2x/deploy.sh
+    rebuild:
+      # App-only deploy as your user: engine build (skipped if unchanged), pip, UI build, PM2 restart.
+      - VIDEO2X_APP_ONLY=1 bash ~/Desktop/video2x/deploy.sh
+    ports:
+      - { port: 9281, label: api }
+    domains:
+      - https://video.thatinsaneguy.com
+      - https://video.thatinsaneguy.com/api/health
+    deploy: { script: ~/Desktop/video2x/deploy.sh, sudo: true, safe: false }
+    notes: GPU upscaler — Restart/Rebuild re-runs any job in progress.
 
   - id: nextcloud
     name: Nextcloud
@@ -142,21 +159,21 @@ projects:
     domains:
       - https://streaming.thatinsaneguy.com
     deploy: { script: ~/Desktop/selfHosted/jellyfin/deploy.sh, sudo: true, safe: false }
-    notes: May need NVIDIA runtime for hardware transcode.
+    notes: May need the NVIDIA runtime for transcoding.
 
   - id: tinypilot
     name: TinyPilot (LAN)
     category: lan-device
     domains:
       - https://tpilot.thatinsaneguy.com
-    notes: KVM device on LAN — monitor only (no local start/stop).
+    notes: LAN KVM — monitor only.
 
   - id: octopi
     name: OctoPi (LAN)
     category: lan-device
     domains:
       - https://bramha.thatinsaneguy.com
-    notes: 3D printer host on LAN — monitor only (no local start/stop).
+    notes: LAN 3D printer — monitor only.
 
 # Infra services checked for status (no per-project deploy button).
 infra:
