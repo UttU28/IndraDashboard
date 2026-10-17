@@ -105,13 +105,14 @@ projects:
     name: Video2X Studio
     category: web-app
     git_repos: [~/Desktop/video2x]
-    pm2: [video2x]
+    pm2: [video2x, video2x-ollama]
     pm2_bootstrap: ~/Desktop/video2x/deploy.sh
     rebuild:
       # App-only deploy as your user: engine build (skipped if unchanged), pip, UI build, PM2 restart.
       - VIDEO2X_APP_ONLY=1 bash ~/Desktop/video2x/deploy.sh
     ports:
       - { port: 9281, label: api }
+      - { port: 11434, label: ai }
     domains:
       - https://video.thatinsaneguy.com
       - https://video.thatinsaneguy.com/api/health
@@ -176,6 +177,8 @@ projects:
     notes: LAN 3D printer — monitor only.
 
 # Infra services checked for status (no per-project deploy button).
+#   control: true adds Start / Restart / Stop buttons for the systemd unit. Needs the
+#   passwordless rule: sudo bash ~/Desktop/dktp/installIndraSudoers.sh
 infra:
   - id: nginx
     name: nginx
@@ -186,6 +189,12 @@ infra:
   - id: docker
     name: Docker Engine
     systemd: docker
+  - id: transmission
+    name: Transmission
+    systemd: transmission-daemon
+    control: true
+    ports:
+      - { port: 9091, label: rpc }
   - id: ollama
     name: Ollama
     ports:

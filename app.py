@@ -11,7 +11,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import secrets
+import signal
 import socket
 import subprocess
 import threading
@@ -144,8 +146,22 @@ def systemd_active(unit: str) -> bool:
         return False
 
 
+def systemd_state(unit: str) -> str:
+    """`systemctl is-active` word: active, inactive, failed, activating, ..."""
+    try:
+        out = subprocess.run(
+            ["systemctl", "is-active", unit], capture_output=True, text=True, timeout=5
+        ).stdout.strip()
+        return out or "unknown"
+    except Exception:
+        return "unknown"
+
+
 def argo_applications() -> dict[str, Any]:
     """Read-only Argo CD application status from the local cluster."""
+    if not systemd_active("k3s"):
+        # Without this, kubectl prints a screenful of "connection refused" retries.
+        return {"ok": False, "stopped": True, "error": "Kubernetes (k3s) is stopped.", "apps": []}
     try:
         out = subprocess.run(
             ["kubectl", "get", "applications", "-n", "argocd", "-o", "json"],
@@ -275,7 +291,9 @@ def collect_status() -> dict[str, Any]:
     for i in cfg.get("infra", []):
         entry: dict[str, Any] = {"id": i["id"], "name": i["name"]}
         if i.get("systemd"):
-            entry["active"] = systemd_active(i["systemd"])
+            entry["state"] = systemd_state(i["systemd"])
+            entry["active"] = entry["state"] == "active"
+            entry["control"] = bool(i.get("control"))
         if i.get("ports"):
             entry["ports"] = [
                 {**pp, "open": port_open(pp["port"])} for pp in i["ports"]
@@ -286,6 +304,8 @@ def collect_status() -> dict[str, Any]:
         "projects": projects,
         "infra": infra,
         "argo": argo_applications(),
+        "server": server_state(),
+        "games": steam_games(),
         "ts": int(time.time()),
     }
 
@@ -699,6 +719,270 @@ def _run_job(job_id: str, cmds: list[str], action: str) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Whole-server Stop all / Start all (header buttons)
+# --------------------------------------------------------------------------- #
+# Both buttons run the one ~/Desktop/deploy.sh. 9 stops everything except Indra; start
+# redeploys everything except Indra itself (6), because redeploying Indra from its own job
+# would kill the job half way (4/5 are nginx-only proxies with nothing to start).
+# Override under `server:` in projects.yaml.
+SERVER_ACTIONS = {
+    "stop_all": "bash ~/Desktop/deploy.sh 9",
+    "start_all": "bash ~/Desktop/deploy.sh 1,2,3,7,8",
+}
+SERVER_JOB_TIMEOUT = 3600
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
+
+def server_command(action: str) -> str:
+    override = (load_config().get("server") or {}).get(action)
+    return expand(str(override or SERVER_ACTIONS[action]))
+
+
+def running_server_job() -> dict[str, Any] | None:
+    with JOBS_LOCK:
+        for job_id, job in JOBS.items():
+            if job.get("project") == "server" and not job.get("done"):
+                return {"job": job_id, "action": job["action"]}
+    return None
+
+
+def server_state() -> dict[str, Any]:
+    return {"k3s": systemd_active("k3s"), "running": running_server_job()}
+
+
+# --------------------------------------------------------------------------- #
+# Steam games — header "Game mode" only closes a running game, never Steam
+# --------------------------------------------------------------------------- #
+_STEAM_LAUNCH_RE = re.compile(r"(?:^|/)reaper\s+SteamLaunch\s+AppId=(\d+)\b")
+_GAME_WAIT_RE = re.compile(r"waitforexitandrun\s+(.+)$")
+_WRAPPER_MARKERS = (
+    "reaper",
+    "srt-bwrap",
+    "pv-adverb",
+    "pressure-vessel",
+    "waitforexitandrun",
+    "/proton",
+    "python3",
+    "steam.sh",
+    "steamwebhelper",
+)
+
+
+def _process_rows() -> list[tuple[int, int, str]]:
+    try:
+        out = subprocess.run(
+            ["ps", "-u", str(os.getuid()), "-o", "pid=", "-o", "ppid=", "-o", "args="],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return []
+    rows: list[tuple[int, int, str]] = []
+    for line in out.stdout.splitlines():
+        parts = line.strip().split(None, 2)
+        if len(parts) < 2 or not parts[0].isdigit():
+            continue
+        rows.append((int(parts[0]), int(parts[1]), parts[2] if len(parts) > 2 else ""))
+    return rows
+
+
+def _game_name(cmd: str, appid: str) -> str:
+    match = _GAME_WAIT_RE.search(cmd)
+    path = match.group(1).strip().strip('"') if match else ""
+    if not path:
+        tail = cmd.split(" -- ")[-1].strip().strip('"')
+        path = tail if "/" in tail else ""
+    if not path:
+        return f"Steam game {appid}"
+    parent = Path(path).parent.name
+    if parent and parent.lower() not in {"proton", "files", "common"}:
+        return parent
+    return Path(path).stem or f"Steam game {appid}"
+
+
+def _game_exe(cmd: str) -> str:
+    match = _GAME_WAIT_RE.search(cmd)
+    path = match.group(1).strip().strip('"') if match else ""
+    return Path(path).name if path else ""
+
+
+def steam_games() -> list[dict[str, Any]]:
+    """Games Steam has launched. The Steam client itself is not a game."""
+    games: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    try:
+        for pid, _ppid, args in _process_rows():
+            match = _STEAM_LAUNCH_RE.search(args)
+            if not match:
+                continue
+            appid = match.group(1)
+            if appid in seen:
+                continue
+            seen.add(appid)
+            games.append(
+                {
+                    "appid": appid,
+                    "pid": pid,
+                    "name": _game_name(args, appid),
+                    "exe": _game_exe(args),
+                }
+            )
+    except Exception:
+        return []
+    return games
+
+
+def _descendants(rows: list[tuple[int, int, str]], root: int) -> list[int]:
+    children: dict[int, list[int]] = {}
+    for pid, ppid, _args in rows:
+        children.setdefault(ppid, []).append(pid)
+    found: list[int] = []
+    stack = [root]
+    while stack:
+        current = stack.pop()
+        for child in children.get(current, []):
+            found.append(child)
+            stack.append(child)
+    return found
+
+
+def _signal_pids(pids: list[int], sig: int) -> None:
+    for pid in pids:
+        try:
+            os.kill(pid, sig)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
+def _alive(pids: list[int]) -> list[int]:
+    still: list[int] = []
+    for pid in pids:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            continue
+        except PermissionError:
+            still.append(pid)
+            continue
+        still.append(pid)
+    return still
+
+
+def stop_steam_games() -> tuple[list[str], str]:
+    """Ask each running Steam game to quit. The Steam client is left running."""
+    rows = _process_rows()
+    by_pid = {pid: args for pid, _ppid, args in rows}
+    games = steam_games()
+    if not games:
+        return [], "No Steam game is running.\n"
+
+    lines: list[str] = []
+    closed: list[str] = []
+    for game in games:
+        name = game["name"]
+        root = int(game["pid"])
+        exe = game["exe"]
+        if root not in by_pid:
+            lines.append(f"{name} already exited.\n")
+            continue
+        tree = _descendants(rows, root)
+        graceful = [
+            pid
+            for pid in tree
+            if exe
+            and exe in by_pid.get(pid, "")
+            and not any(marker in by_pid.get(pid, "") for marker in _WRAPPER_MARKERS)
+        ]
+        lines.append(f"Closing {name}…\n")
+        if graceful:
+            lines.append(f"  asking {exe} to quit\n")
+            _signal_pids(graceful, signal.SIGTERM)
+        else:
+            lines.append("  asking the game to quit\n")
+            _signal_pids(tree, signal.SIGTERM)
+
+        deadline = time.time() + 12
+        while time.time() < deadline and _alive([root]):
+            time.sleep(0.4)
+
+        if _alive([root]):
+            lines.append("  still running, closing the game session\n")
+            _signal_pids(tree + [root], signal.SIGTERM)
+            time.sleep(3)
+        if _alive([root, *tree]):
+            lines.append("  forcing the game closed\n")
+            _signal_pids(_alive(tree + [root]), signal.SIGKILL)
+
+        if _alive([root]):
+            lines.append(f"{name} did not exit.\n")
+        else:
+            lines.append(f"{name} is closed. Steam is still running.\n")
+            closed.append(name)
+    return closed, "".join(lines)
+
+
+def _run_server_job(job_id: str, cmd: str) -> None:
+    def append(text: str) -> None:
+        with JOBS_LOCK:
+            JOBS[job_id]["output"] += _ANSI_RE.sub("", text)
+
+    append(f"$ {cmd}\n")
+    rc = 0
+    try:
+        proc = subprocess.Popen(
+            ["bash", "-lc", cmd],
+            stdin=subprocess.DEVNULL,  # no terminal: the scripts use `sudo -n`, never a prompt
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            append(line)
+        proc.wait(timeout=SERVER_JOB_TIMEOUT)
+        rc = proc.returncode or 0
+    except subprocess.TimeoutExpired:
+        append(f"\n[timed out after {SERVER_JOB_TIMEOUT}s]\n")
+        rc = 124
+    except Exception as exc:  # noqa: BLE001
+        append(f"\n[error: {exc!r}]\n")
+        rc = 1
+    if rc != 0 and "a password is required" in JOBS[job_id]["output"]:
+        append(
+            "\n[sudo] Kubernetes/Transmission need the passwordless rule. Install it once:\n"
+            "  sudo bash ~/Desktop/dktp/installIndraSudoers.sh\n"
+        )
+    with JOBS_LOCK:
+        JOBS[job_id]["rc"] = rc
+        JOBS[job_id]["done"] = True
+        JOBS[job_id]["finished"] = int(time.time())
+
+
+# --------------------------------------------------------------------------- #
+# Infra services with `control: true` (start / stop / restart a systemd unit)
+# --------------------------------------------------------------------------- #
+# Restart is stop + start so it stays inside the fixed commands of
+# /etc/sudoers.d/indraServices (which has no `systemctl restart`).
+INFRA_ACTIONS = {
+    "start": ["start"],
+    "stop": ["stop"],
+    "restart": ["stop", "start"],
+}
+_UNIT_RE = re.compile(r"^[A-Za-z0-9@_.\-]+$")
+
+
+def infra_command(unit: str, action: str) -> str:
+    steps = [f"sudo -n /usr/bin/systemctl {verb} {unit}" for verb in INFRA_ACTIONS[action]]
+    # Always end with the unit's status so the log shows what it ended up as.
+    return (
+        " && ".join(steps)
+        + f"; rc=$?; systemctl status {unit} --no-pager -n 15; exit $rc"
+    )
+
+
+# --------------------------------------------------------------------------- #
 # Argo CD UI on this same host (/argocd/)
 # --------------------------------------------------------------------------- #
 _ARGO_SKIP_HEADERS = {
@@ -892,6 +1176,74 @@ def api_action(payload: dict[str, Any], _: None = Depends(_auth)) -> JSONRespons
         }
     threading.Thread(
         target=_run_job, args=(job_id, cmds, action), daemon=True
+    ).start()
+    return JSONResponse({"job": job_id})
+
+
+@app.post("/api/server")
+def api_server(payload: dict[str, Any], _: None = Depends(_auth)) -> JSONResponse:
+    """Stop all / Start all for the whole machine (see SERVER_ACTIONS)."""
+    action = payload.get("action", "")
+    if action not in SERVER_ACTIONS:
+        raise HTTPException(400, f"unknown server action {action!r}")
+    running = running_server_job()
+    if running:
+        raise HTTPException(409, f"{running['action']} is still running")
+    job_id = uuid.uuid4().hex[:12]
+    with JOBS_LOCK:
+        JOBS[job_id] = {
+            "project": "server",
+            "action": action,
+            "output": "",
+            "rc": None,
+            "done": False,
+            "updated": False,
+            "started": int(time.time()),
+        }
+    threading.Thread(
+        target=_run_server_job, args=(job_id, server_command(action)), daemon=True
+    ).start()
+    return JSONResponse({"job": job_id})
+
+
+@app.post("/api/games/stop")
+def api_games_stop(_: None = Depends(_auth)) -> JSONResponse:
+    """Close every Steam game. Does not start a game and does not stop Steam."""
+    closed, log = stop_steam_games()
+    return JSONResponse({"closed": closed, "log": log})
+
+
+@app.post("/api/infra")
+def api_infra(payload: dict[str, Any], _: None = Depends(_auth)) -> JSONResponse:
+    """Start / stop / restart an infra systemd unit marked `control: true`."""
+    iid = payload.get("id", "")
+    action = payload.get("action", "")
+    if action not in INFRA_ACTIONS:
+        raise HTTPException(400, f"unknown infra action {action!r}")
+    entry = next(
+        (i for i in load_config().get("infra", []) if i.get("id") == iid), None
+    )
+    if not entry:
+        raise HTTPException(404, f"unknown infra service {iid!r}")
+    unit = str(entry.get("systemd") or "")
+    if not entry.get("control") or not _UNIT_RE.match(unit):
+        raise HTTPException(400, f"{iid!r} is not controllable from Indra")
+    project = f"infra:{iid}"
+    with JOBS_LOCK:
+        if any(j.get("project") == project and not j.get("done") for j in JOBS.values()):
+            raise HTTPException(409, f"{entry['name']} already has an action running")
+        job_id = uuid.uuid4().hex[:12]
+        JOBS[job_id] = {
+            "project": project,
+            "action": action,
+            "output": "",
+            "rc": None,
+            "done": False,
+            "updated": False,
+            "started": int(time.time()),
+        }
+    threading.Thread(
+        target=_run_server_job, args=(job_id, infra_command(unit, action)), daemon=True
     ).start()
     return JSONResponse({"job": job_id})
 

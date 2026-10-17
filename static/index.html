@@ -84,6 +84,19 @@
     box-shadow: 0 8px 24px rgba(0,0,0,.2); transform: translateY(-1px);
   }
   .btn:active { transform: translateY(0); }
+  .btn.server { font-weight: 620; }
+  .btn.server.stop { color: var(--down); border-color: color-mix(in srgb, var(--down) 40%, transparent); }
+  .btn.server.start { color: var(--up); border-color: color-mix(in srgb, var(--up) 40%, transparent); }
+  .btn.server.game { color: var(--muted); }
+  .btn.server.game.on {
+    color: var(--partial); border-color: color-mix(in srgb, var(--partial) 55%, transparent);
+    background: rgba(251, 191, 36, .12);
+  }
+  .btn.server:disabled { opacity: .45; cursor: wait; }
+  .btn.server.game:disabled { cursor: default; }
+  .btn.server.game.on:disabled { cursor: wait; }
+  .confirm-note { flex: 1; align-self: center; color: var(--muted); font-size: 12.5px; }
+  @media (max-width: 720px) { .btn.server { padding-inline: 9px; } }
   .btn.small { min-height: 31px; padding: 5px 10px; font-size: 11.5px; }
   .btn[data-a="restart"]::before { content: "↻"; font-size: 15px; }
   .btn[data-a="rebuild"]::before { content: "◇"; font-size: 13px; }
@@ -253,6 +266,9 @@
   <div class="spacer"></div>
   <span class="stamp" id="stamp"></span>
   <label class="toggle"><input type="checkbox" id="auto" checked /><span>Live</span></label>
+  <button class="btn server game" id="gameMode" title="On while a Steam game is running. Click to close the game. Steam stays open." disabled>Game mode</button>
+  <button class="btn server stop" id="stopAll" title="Stop every hosted app and Kubernetes">■ Stop all</button>
+  <button class="btn server start" id="startAll" title="Start Kubernetes first, then every hosted app">▶ Start all</button>
   <button class="btn" id="refresh">↻ Refresh</button>
 </header>
 <main id="main"><div class="loading"><div class="spinner"></div></div></main>
@@ -266,6 +282,11 @@
       <button class="btn small" id="m-close">Close</button>
     </div>
     <pre class="log" id="m-log"></pre>
+    <div class="sudo" id="m-confirm">
+      <span class="confirm-note" id="m-confirm-note"></span>
+      <button class="btn" id="m-cancel">Cancel</button>
+      <button class="btn" id="m-go">Confirm</button>
+    </div>
     <div class="sudo" id="m-sudo">
       <input type="password" id="m-pw" placeholder="sudo password (used once, not stored)" />
       <button class="btn" id="m-run">Run deploy</button>
@@ -276,6 +297,42 @@
 <script>
 const $ = (s, r = document) => r.querySelector(s);
 let pendingDeploy = null;
+/** "stop_all" | "start_all" waiting for the Confirm button */
+let pendingServerAction = null;
+/** true while the Game mode confirm is waiting to close a running Steam game */
+let pendingGameClose = false;
+let gameBusy = false;
+
+const serverActions = {
+  stop_all: {
+    title: "Stop all",
+    running: "stopping…",
+    text:
+      "This stops everything hosted on this machine:\n\n" +
+      "  • Apeksha, Habit Tracker, Video2X (and its AI model server)\n" +
+      "  • Jellyfin, Immich, Nextcloud, Transmission\n" +
+      "  • Kubernetes: Argo CD, Link It Up, Saral\n\n" +
+      "Left running: Indra (this page), nginx, Docker, Sunshine and Steam.\n" +
+      "Games are not touched. Stopped apps stay stopped after a reboot\n" +
+      "until you press Start all.\n\n" +
+      "Runs: bash ~/Desktop/deploy.sh 9",
+    note: "Sites will go offline.",
+  },
+  start_all: {
+    title: "Start all",
+    running: "starting…",
+    text:
+      "This brings everything back, in this order:\n\n" +
+      "  1. Kubernetes (Argo CD, Link It Up, Saral) - first, so apps that need it find it up\n" +
+      "  2. Apeksha, Habit Tracker\n" +
+      "  3. Jellyfin, Immich, Nextcloud, Transmission\n" +
+      "  4. Video2X\n\n" +
+      "It is the normal deploy, so it also rebuilds anything whose code changed.\n" +
+      "It can take several minutes. Indra itself is not restarted.\n\n" +
+      "Runs: bash ~/Desktop/deploy.sh 1,2,3,7,8",
+    note: "Running apps are restarted.",
+  },
+};
 /** project id -> "rebuild" | "restart" after a pull brought new commits */
 const suggestedAfterPull = {};
 /** last /api/status payload — used after pull to pick rebuild vs restart */
@@ -390,16 +447,23 @@ function argoCard(a) {
 
 function infraCard(i) {
   const rows = [];
-  if ("active" in i)
-    rows.push(`<div class="row"><span class="lbl">service</span><span class="pill ${i.active ? "ok" : "bad"}">${i.active ? "active" : "inactive"}</span></div>`);
+  if ("active" in i) {
+    const state = i.state || (i.active ? "active" : "inactive");
+    rows.push(`<div class="row"><span class="lbl">service</span><span class="pill ${i.active ? "ok" : "bad"}">${esc(state)}</span></div>`);
+  }
   if (i.ports)
     rows.push(`<div class="row"><span class="lbl">ports</span>${portPills(i.ports)}</div>`);
   const ok = ("active" in i ? i.active : true) &&
     (i.ports ? i.ports.some(p => p.open) : true);
+  const acts = i.control
+    ? ["start", "restart", "stop"].map(a =>
+        `<button class="btn small" data-ia="${a}" data-i="${i.id}" data-n="${esc(i.name)}">${a[0].toUpperCase() + a.slice(1)}</button>`)
+    : [];
   return `<div class="card">
     <div class="card-head"><span class="dot ${ok ? "up" : "down"}"></span>
       <h3>${i.name}</h3><span class="cat">infra</span></div>
-    <div class="rows">${rows.join("")}</div></div>`;
+    <div class="rows">${rows.join("")}</div>
+    ${acts.length ? `<div class="actions">${acts.join("")}</div>` : ""}</div>`;
 }
 
 async function render() {
@@ -437,12 +501,19 @@ async function render() {
     if (d.argo && d.argo.ok && argoApps.length) {
       html += argoHead + `<div class="grid">` +
         argoApps.map(argoCard).join("") + `</div>`;
+    } else if (d.argo && d.argo.stopped) {
+      html += `<div class="section-title">Argo CD</div><div class="grid"><div class="card">
+        <div class="card-head"><span class="dot down"></span><h3>Kubernetes is stopped</h3><span class="cat">k3s</span></div>
+        <div class="rows"><div class="row muted">Argo CD, Link It Up and Saral are off. Press “Start all” at the top to bring them back.</div></div>
+      </div></div>`;
     } else if (d.argo && !d.argo.ok) {
       html += argoHead + `<div class="grid"><div class="card">
         <div class="card-head"><span class="dot down"></span><h3>Argo CD</h3><span class="cat">argo</span></div>
-        <div class="rows"><div class="row muted">${esc(d.argo.error || "unreachable")}</div></div>
+        <div class="rows"><div class="row muted">${esc((d.argo.error || "unreachable").split("\n").slice(-1)[0])}</div></div>
       </div></div>`;
     }
+    syncServerButtons(d.server);
+    syncGameButton(d.games || []);
     if (d.infra && d.infra.length)
       html += `<div class="section-title">Infrastructure</div><div class="grid">` +
         d.infra.map(infraCard).join("") + `</div>`;
@@ -450,8 +521,107 @@ async function render() {
 
     $("#main").querySelectorAll("button[data-a]").forEach(b =>
       b.addEventListener("click", () => onAction(b.dataset.p, b.dataset.a)));
+    $("#main").querySelectorAll("button[data-ia]").forEach(b =>
+      b.addEventListener("click", () => onInfraAction(b.dataset.i, b.dataset.ia, b.dataset.n)));
   } catch (e) {
     $("#main").innerHTML = `<p class="pill bad">Error: ${e.message}</p>`;
+  }
+}
+
+/** Disable the header buttons while a stop/start job runs (also when another tab started it). */
+function syncServerButtons(server) {
+  const busy = !!(server && server.running);
+  $("#stopAll").disabled = busy;
+  $("#startAll").disabled = busy;
+  $("#stopAll").textContent = busy && server.running.action === "stop_all" ? "■ Stopping…" : "■ Stop all";
+  $("#startAll").textContent = busy && server.running.action === "start_all" ? "▶ Starting…" : "▶ Start all";
+}
+
+function syncGameButton(games) {
+  const btn = $("#gameMode");
+  const running = (games || []).filter(g => g && g.name);
+  btn.classList.toggle("on", running.length > 0);
+  btn.disabled = gameBusy || running.length === 0;
+  if (gameBusy) {
+    btn.textContent = "Game mode · closing…";
+    return;
+  }
+  if (running.length) {
+    const names = running.map(g => g.name).join(", ");
+    btn.textContent = "Game mode · on";
+    btn.title = names + " is running. Click to close the game. Steam stays open.";
+  } else {
+    btn.textContent = "Game mode";
+    btn.title = "No Steam game is running.";
+  }
+}
+
+function askCloseGame() {
+  const games = ((lastStatus && lastStatus.games) || []).filter(g => g && g.name);
+  if (!games.length || gameBusy) return;
+  const names = games.map(g => g.name);
+  openModal("Game mode");
+  $("#m-log").textContent =
+    (names.length === 1
+      ? names[0] + " is running.\n\n"
+      : "These games are running:\n\n" + names.map(n => "  • " + n).join("\n") + "\n\n") +
+    "End the game now? It is closed so it can save.\n" +
+    "Steam stays open. This does not start a game.";
+  $("#m-confirm-note").textContent = "Steam stays open.";
+  $("#m-go").textContent = "End game";
+  $("#m-confirm").style.display = "flex";
+  pendingGameClose = true;
+}
+
+async function runCloseGame() {
+  if (!pendingGameClose) return;
+  pendingGameClose = false;
+  $("#m-confirm").style.display = "none";
+  $("#m-log").textContent = "";
+  $("#m-status").textContent = "closing…";
+  gameBusy = true;
+  syncGameButton((lastStatus && lastStatus.games) || []);
+  try {
+    const res = await api("/api/games/stop", { method: "POST" });
+    $("#m-log").textContent = res.log || "Closed.";
+    $("#m-status").textContent = (res.closed || []).length ? "✓ done" : "no game";
+  } catch (e) {
+    $("#m-log").textContent = e.message;
+    $("#m-status").textContent = "failed";
+  }
+  gameBusy = false;
+  render();
+}
+
+function askServerAction(action) {
+  const meta = serverActions[action];
+  openModal(`Server · ${meta.title}`);
+  $("#m-log").textContent = meta.text;
+  $("#m-confirm-note").textContent = meta.note;
+  $("#m-go").textContent = meta.title;
+  $("#m-confirm").style.display = "flex";
+  pendingServerAction = action;
+}
+
+async function runServerAction() {
+  const action = pendingServerAction;
+  if (!action) return;
+  pendingServerAction = null;
+  $("#m-confirm").style.display = "none";
+  $("#m-log").textContent = "";
+  $("#m-status").textContent = serverActions[action].running;
+  syncServerButtons({ running: { action } });
+  try {
+    const { job } = await api("/api/server", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    await poll(job, "server", action);
+  } catch (e) {
+    $("#m-log").textContent += "\n[error] " + e.message;
+    $("#m-status").textContent = "failed";
+    render();
   }
 }
 
@@ -461,9 +631,17 @@ function openModal(title) {
   $("#m-status").textContent = "";
   $("#m-status").classList.remove("conflict");
   $("#m-sudo").style.display = "none";
+  $("#m-confirm").style.display = "none";
+  pendingServerAction = null;
+  pendingGameClose = false;
   $("#overlay").classList.add("show");
 }
-function closeModal() { $("#overlay").classList.remove("show"); pendingDeploy = null; }
+function closeModal() {
+  $("#overlay").classList.remove("show");
+  pendingDeploy = null;
+  pendingServerAction = null;
+  pendingGameClose = false;
+}
 
 async function onAction(project, action) {
   if (action === "rebuild" || action === "restart")
@@ -480,6 +658,22 @@ async function onAction(project, action) {
     return;
   }
   await startJob(project, action, null);
+}
+
+async function onInfraAction(id, action, name) {
+  openModal(`${name} · ${action}`);
+  $("#m-status").textContent = "running…";
+  try {
+    const { job } = await api("/api/infra", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, action }),
+    });
+    await poll(job, "infra:" + id, action);
+  } catch (e) {
+    $("#m-log").textContent += "\n[error] " + e.message;
+    $("#m-status").textContent = "failed";
+  }
 }
 
 async function startJob(project, action, sudo_password) {
@@ -524,6 +718,14 @@ async function poll(job, project, action) {
 }
 
 $("#refresh").addEventListener("click", render);
+$("#gameMode").addEventListener("click", askCloseGame);
+$("#stopAll").addEventListener("click", () => askServerAction("stop_all"));
+$("#startAll").addEventListener("click", () => askServerAction("start_all"));
+$("#m-go").addEventListener("click", () => {
+  if (pendingGameClose) runCloseGame();
+  else runServerAction();
+});
+$("#m-cancel").addEventListener("click", closeModal);
 $("#m-close").addEventListener("click", closeModal);
 $("#overlay").addEventListener("click", e => { if (e.target.id === "overlay") closeModal(); });
 $("#m-run").addEventListener("click", () => {
