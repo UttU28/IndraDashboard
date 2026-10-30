@@ -387,7 +387,9 @@ def _docker_compose_cmd(ddir: str, base: str, d: dict[str, Any] | None) -> str:
     return f"cd {ddir!r} && {base}"
 
 
-def _build_commands(p: dict[str, Any], action: str, sudo_pw: str | None) -> list[str]:
+def _build_commands(
+    p: dict[str, Any], action: str, sudo_pw: str | None, lines: int = 120
+) -> list[str]:
     cmds: list[str] = []
     pm2_names = p.get("pm2", [])
     d = p.get("docker")
@@ -427,10 +429,10 @@ def _build_commands(p: dict[str, Any], action: str, sudo_pw: str | None) -> list
                 cmds.append(f"pm2 restart {' '.join(pm2_names)}")
     elif action == "logs":
         if pm2_names:
-            cmds.append(f"pm2 logs {' '.join(pm2_names)} --lines 120 --nostream")
+            cmds.append(f"pm2 logs {' '.join(pm2_names)} --lines {lines} --nostream")
         if ddir:
             cmds.append(
-                _docker_compose_cmd(ddir, "docker compose logs --tail 120", d)
+                _docker_compose_cmd(ddir, f"docker compose logs --tail {lines}", d)
             )
     elif action == "deploy":
         dep = p.get("deploy")
@@ -727,7 +729,7 @@ def _run_job(job_id: str, cmds: list[str], action: str) -> None:
 # Override under `server:` in projects.yaml.
 SERVER_ACTIONS = {
     "stop_all": "bash ~/Desktop/deploy.sh 9",
-    "start_all": "bash ~/Desktop/deploy.sh 1,2,3,7,8",
+    "start_all": "bash ~/Desktop/deploy.sh 1,2,3,8",
 }
 SERVER_JOB_TIMEOUT = 3600
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -1132,6 +1134,10 @@ def api_action(payload: dict[str, Any], _: None = Depends(_auth)) -> JSONRespons
     pid = payload.get("project", "")
     action = payload.get("action", "")
     sudo_pw = payload.get("sudo_password")
+    try:
+        lines = min(max(int(payload.get("lines") or 120), 20), 2000)
+    except (TypeError, ValueError):
+        lines = 120
     p = _find_project(pid)
     if not p:
         raise HTTPException(404, f"unknown project {pid!r}")
@@ -1159,7 +1165,7 @@ def api_action(payload: dict[str, Any], _: None = Depends(_auth)) -> JSONRespons
         return JSONResponse({"job": job_id})
 
     try:
-        cmds = _build_commands(p, action, sudo_pw)
+        cmds = _build_commands(p, action, sudo_pw, lines)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 

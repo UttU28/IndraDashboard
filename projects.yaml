@@ -66,58 +66,6 @@ projects:
       - https://habit.thatinsaneguy.com
     deploy: { script: ~/Desktop/habitTracker/backend/deploy.sh, sudo: true, safe: false }
 
-  - id: mememaker
-    name: MemeMaker
-    category: web-app
-    git_repos: [~/Desktop/MemeMaker]
-    pm2: [memevoiceclone-frontend, mememaker-backend]
-    docker:
-      dir: ~/Desktop/MemeMaker/F5-TTS
-      containers: []
-      compose_services: [f5-tts]
-    ports:
-      - { port: 9230, label: frontend }
-      - { port: 9231, label: api }
-      - { port: 9232, label: f5-tts }
-    domains:
-      - https://meme.thatinsaneguy.com
-    deploy: { script: ~/Desktop/MemeMaker/deploy.sh, sudo: true, safe: false }
-    notes: F5-TTS needs the NVIDIA runtime.
-
-  - id: resumeforge
-    name: resumeForge
-    category: web-app
-    git_repos: [~/Desktop/resumeForge]
-    pm2: [resumeforge-frontend]
-    pm2_bootstrap: ~/Desktop/resumeForge/frontend/deploy.sh
-    docker:
-      dir: ~/Desktop/resumeForge
-      containers: [resume-forge-backend]
-      compose_services: [resume-forge-backend]
-    ports:
-      - { port: 9240, label: frontend }
-      - { port: 9241, label: api }
-    domains: []
-    deploy: { script: ~/Desktop/resumeForge/deploy.sh, sudo: true, safe: false }
-    notes: PM2 process is resumeforge-frontend.
-
-  - id: video2x
-    name: Video2X Studio
-    category: web-app
-    git_repos: [~/Desktop/video2x]
-    pm2: [video2x, video2x-ollama]
-    pm2_bootstrap: ~/Desktop/video2x/deploy.sh
-    rebuild:
-      # App-only deploy as your user: engine build (skipped if unchanged), pip, UI build, PM2 restart.
-      - VIDEO2X_APP_ONLY=1 bash ~/Desktop/video2x/deploy.sh
-    ports:
-      - { port: 9281, label: api }
-      - { port: 11434, label: ai }
-    domains:
-      - https://video.thatinsaneguy.com
-      - https://video.thatinsaneguy.com/api/health
-    deploy: { script: ~/Desktop/video2x/deploy.sh, sudo: true, safe: false }
-    notes: GPU upscaler — Restart/Rebuild re-runs any job in progress.
 
   - id: nextcloud
     name: Nextcloud
@@ -162,12 +110,16 @@ projects:
     deploy: { script: ~/Desktop/selfHosted/jellyfin/deploy.sh, sudo: true, safe: false }
     notes: May need the NVIDIA runtime for transcoding.
 
-  - id: tinypilot
-    name: TinyPilot (LAN)
-    category: lan-device
+  - id: sunshine
+    name: Sunshine (Moonlight host)
+    category: self-hosted
+    ports:
+      - { port: 40000, label: moonlight }
+      - { port: 40001, label: web-ui }
     domains:
       - https://tpilot.thatinsaneguy.com
-    notes: LAN KVM — monitor only.
+    deploy: { script: ~/Desktop/sunshine/deploy.sh, sudo: true, safe: false }
+    notes: Web UI at tpilot (401 = up, 502 = Sunshine down). Start/stop/status - bash ~/Desktop/sunshine/deploy.sh start|stop|status
 
   - id: octopi
     name: OctoPi (LAN)
@@ -195,7 +147,3 @@ infra:
     control: true
     ports:
       - { port: 9091, label: rpc }
-  - id: ollama
-    name: Ollama
-    ports:
-      - { port: 11434, label: llm }

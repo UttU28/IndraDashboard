@@ -2,744 +2,118 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<meta name="theme-color" content="#070a12" />
-<link rel="icon" type="image/png" href="/static/favicon.png?v=2" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#05070d" />
 <title>Indra</title>
-<style>
-  :root {
-    color-scheme: dark;
-    --bg: #070a12;
-    --surface: rgba(14, 19, 31, .82);
-    --surface-solid: #0e131f;
-    --surface-raised: #151c2b;
-    --line: rgba(148, 163, 184, .12);
-    --line-bright: rgba(148, 163, 184, .22);
-    --text: #f4f7fb;
-    --text-soft: #c3ccda;
-    --muted: #77849a;
-    --up: #34d399;
-    --down: #fb7185;
-    --partial: #fbbf24;
-    --mon: #60a5fa;
-    --accent: #818cf8;
-    --accent-2: #22d3ee;
-    --radius: 18px;
-    --shadow: 0 22px 60px rgba(0, 0, 0, .28);
-  }
-  * { box-sizing: border-box; }
-  ::selection { background: rgba(129, 140, 248, .32); }
-  html { min-height: 100%; }
-  body {
-    min-height: 100vh;
-    margin: 0;
-    background:
-      radial-gradient(900px 500px at 12% -10%, rgba(79, 70, 229, .16), transparent 62%),
-      radial-gradient(800px 500px at 96% 4%, rgba(6, 182, 212, .09), transparent 58%),
-      var(--bg);
-    color: var(--text);
-    font: 14px/1.5 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    letter-spacing: -.01em;
-  }
-  body::before {
-    content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .16;
-    background-image: linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
-    background-size: 48px 48px;
-    mask-image: linear-gradient(to bottom, black, transparent 70%);
-  }
-  header {
-    position: sticky; top: 0; z-index: 10; min-height: 72px;
-    background: rgba(7, 10, 18, .76); backdrop-filter: blur(22px) saturate(140%);
-    border-bottom: 1px solid var(--line);
-    padding: 0 max(22px, calc((100vw - 1460px) / 2));
-    display: flex; align-items: center; gap: 24px;
-  }
-  .brand { display: flex; align-items: center; gap: 12px; min-width: max-content; }
-  .brand-icon {
-    width: 38px; height: 38px; border-radius: 11px; object-fit: cover;
-    box-shadow: 0 0 0 1px rgba(129,140,248,.28), 0 8px 28px rgba(79,70,229,.24);
-  }
-  .brand-copy { display: flex; flex-direction: column; line-height: 1.15; }
-  header h1 { font-size: 15px; margin: 0; font-weight: 680; letter-spacing: -.02em; }
-  .eyebrow { color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .14em; margin-top: 4px; }
-  .counts { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; }
-  .counts span {
-    display: flex; align-items: center; gap: 6px; padding: 6px 10px;
-    border-radius: 999px; background: rgba(255,255,255,.025); border: 1px solid var(--line);
-  }
-  .counts b { color: var(--text-soft); font-variant-numeric: tabular-nums; }
-  .counts span:nth-child(1) b { color: var(--up); }
-  .counts span:nth-child(2) b { color: var(--partial); }
-  .counts span:nth-child(3) b { color: var(--down); }
-  .spacer { flex: 1; }
-  .btn {
-    min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-    background: rgba(255,255,255,.04); color: var(--text-soft); border: 1px solid var(--line);
-    border-radius: 10px; padding: 7px 13px; cursor: pointer; font: inherit; font-size: 12px;
-    transition: border-color .18s, background .18s, color .18s, transform .18s, box-shadow .18s;
-  }
-  .btn:hover {
-    color: var(--text); background: rgba(129,140,248,.1); border-color: rgba(129,140,248,.38);
-    box-shadow: 0 8px 24px rgba(0,0,0,.2); transform: translateY(-1px);
-  }
-  .btn:active { transform: translateY(0); }
-  .btn.server { font-weight: 620; }
-  .btn.server.stop { color: var(--down); border-color: color-mix(in srgb, var(--down) 40%, transparent); }
-  .btn.server.start { color: var(--up); border-color: color-mix(in srgb, var(--up) 40%, transparent); }
-  .btn.server.game { color: var(--muted); }
-  .btn.server.game.on {
-    color: var(--partial); border-color: color-mix(in srgb, var(--partial) 55%, transparent);
-    background: rgba(251, 191, 36, .12);
-  }
-  .btn.server:disabled { opacity: .45; cursor: wait; }
-  .btn.server.game:disabled { cursor: default; }
-  .btn.server.game.on:disabled { cursor: wait; }
-  .confirm-note { flex: 1; align-self: center; color: var(--muted); font-size: 12.5px; }
-  @media (max-width: 720px) { .btn.server { padding-inline: 9px; } }
-  .btn.small { min-height: 31px; padding: 5px 10px; font-size: 11.5px; }
-  .btn[data-a="restart"]::before { content: "↻"; font-size: 15px; }
-  .btn[data-a="rebuild"]::before { content: "◇"; font-size: 13px; }
-  .btn[data-a="logs"]::before { content: "›_"; font: 700 11px ui-monospace, monospace; }
-  .btn[data-a="stop"] { color: #fda4af; }
-  .btn[data-a="stop"]::before { content: "■"; font-size: 8px; }
-  .btn[data-a="start"]::before { content: "▶"; font-size: 9px; color: var(--up); }
-  .btn[data-a="deploy"]::before { content: "↑"; }
-  .btn[data-a="pull"]::before { content: "↓"; font-size: 13px; }
-  .btn.suggested {
-    color: var(--text);
-    background: rgba(52, 211, 153, .14);
-    border-color: rgba(52, 211, 153, .45);
-    box-shadow: 0 0 0 1px rgba(52, 211, 153, .12), 0 8px 24px rgba(52, 211, 153, .12);
-    animation: pulse-suggest 2.2s ease-in-out infinite;
-  }
-  @keyframes pulse-suggest {
-    0%, 100% { box-shadow: 0 0 0 1px rgba(52, 211, 153, .12), 0 8px 24px rgba(52, 211, 153, .12); }
-    50% { box-shadow: 0 0 0 1px rgba(52, 211, 153, .28), 0 8px 28px rgba(52, 211, 153, .22); }
-  }
-  .pull-hint {
-    width: 100%; margin: -4px 0 2px; padding: 7px 10px; border-radius: 9px;
-    background: rgba(52, 211, 153, .08); border: 1px solid rgba(52, 211, 153, .18);
-    color: #86efac; font-size: 11px;
-  }
-  .toggle {
-    display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px;
-    cursor: pointer; user-select: none;
-  }
-  .toggle input {
-    appearance: none; width: 31px; height: 18px; border-radius: 999px;
-    background: #222a3a; border: 1px solid var(--line-bright); position: relative; margin: 0;
-    transition: .2s;
-  }
-  .toggle input::after {
-    content: ""; width: 12px; height: 12px; border-radius: 50%; background: #718096;
-    position: absolute; top: 2px; left: 2px; transition: .2s;
-  }
-  .toggle input:checked { background: rgba(52,211,153,.18); border-color: rgba(52,211,153,.35); }
-  .toggle input:checked::after { transform: translateX(13px); background: var(--up); box-shadow: 0 0 10px rgba(52,211,153,.5); }
-  main { padding: 28px 24px 70px; max-width: 1508px; margin: 0 auto; position: relative; }
-  .section-row { display: flex; align-items: center; gap: 12px; margin: 30px 3px 11px; }
-  .section-row .section-title { margin: 0; flex: 1; }
-  .section-title {
-    color: #92a0b6; text-transform: uppercase; letter-spacing: .13em; font-weight: 700;
-    font-size: 10.5px; margin: 30px 3px 11px; display: flex; align-items: center; gap: 10px;
-  }
-  .section-title::after { content: ""; height: 1px; flex: 1; background: linear-gradient(90deg, var(--line), transparent 65%); }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 13px; }
-  .card {
-    position: relative; overflow: hidden;
-    background: linear-gradient(145deg, rgba(18,24,39,.92), rgba(11,15,25,.86));
-    border: 1px solid var(--line); border-radius: var(--radius);
-    padding: 17px 17px 15px; display: flex; flex-direction: column; gap: 13px;
-    box-shadow: 0 10px 38px rgba(0,0,0,.13);
-    transition: transform .22s ease, border-color .22s ease, box-shadow .22s ease;
-  }
-  .card::before {
-    content: ""; position: absolute; inset: 0 0 auto; height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(129,140,248,.4), transparent);
-    opacity: 0; transition: opacity .22s;
-  }
-  .card:hover { transform: translateY(-2px); border-color: rgba(129,140,248,.25); box-shadow: var(--shadow); }
-  .card:hover::before { opacity: 1; }
-  .card-head { display: flex; align-items: center; gap: 10px; min-height: 25px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; position: relative; }
-  .dot::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 1px solid currentColor; opacity: .14; }
-  .dot.up { background: var(--up); color: var(--up); box-shadow: 0 0 12px rgba(52,211,153,.7); }
-  .dot.down { background: var(--down); color: var(--down); box-shadow: 0 0 10px rgba(251,113,133,.35); }
-  .dot.partial { background: var(--partial); color: var(--partial); box-shadow: 0 0 12px rgba(251,191,36,.45); }
-  .dot.monitor { background: var(--mon); color: var(--mon); }
-  .card h3 { margin: 0; font-size: 14.5px; font-weight: 650; letter-spacing: -.015em; }
-  .cat {
-    margin-left: auto; font-size: 9.5px; text-transform: uppercase; letter-spacing: .08em;
-    color: #8290a6; background: rgba(255,255,255,.025); border: 1px solid var(--line);
-    padding: 3px 8px; border-radius: 999px;
-  }
-  .rows { display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
-  .row { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; min-height: 22px; }
-  .row .lbl {
-    color: #66748b; min-width: 48px; text-transform: uppercase; letter-spacing: .09em;
-    font-size: 9px; font-weight: 750;
-  }
-  .pill {
-    display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; line-height: 1;
-    padding: 5px 7px; border-radius: 7px; border: 1px solid var(--line);
-    background: rgba(255,255,255,.025); color: #91a0b6; white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-  .pill::before { content: ""; width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: .8; }
-  .pill.ok { color: #6ee7b7; background: rgba(52,211,153,.055); border-color: rgba(52,211,153,.16); }
-  .pill.bad { color: #fda4af; background: rgba(251,113,133,.055); border-color: rgba(251,113,133,.17); }
-  .pill.warn { color: #fcd34d; background: rgba(251,191,36,.05); border-color: rgba(251,191,36,.16); }
-  .actions {
-    display: flex; flex-wrap: wrap; gap: 6px; margin: 1px -2px -2px; padding-top: 12px;
-    border-top: 1px solid rgba(148,163,184,.08);
-  }
-  a.dom {
-    color: #a5b4fc; text-decoration: none; max-width: 210px; overflow: hidden;
-    white-space: nowrap; text-overflow: ellipsis;
-  }
-  a.dom:hover { color: #c7d2fe; }
-  .overlay {
-    position: fixed; inset: 0; background: rgba(2,4,10,.74); display: none;
-    align-items: center; justify-content: center; z-index: 30; padding: 20px;
-    backdrop-filter: blur(12px);
-  }
-  .overlay.show { display: flex; animation: fade .18s ease-out; }
-  .modal {
-    overflow: hidden; background: #0c111d; border: 1px solid var(--line-bright);
-    border-radius: 18px; width: min(920px, 96vw); height: min(660px, 86vh);
-    display: flex; flex-direction: column; box-shadow: 0 32px 100px rgba(0,0,0,.55);
-    animation: rise .22s ease-out;
-  }
-  .modal-head {
-    min-height: 58px; padding: 12px 16px 12px 20px; border-bottom: 1px solid var(--line);
-    background: rgba(255,255,255,.018); display: flex; align-items: center; gap: 11px;
-  }
-  .modal-head strong { font-size: 13px; }
-  .modal-head .status { font-size: 11px; color: var(--muted); padding: 3px 8px; border-radius: 999px; background: rgba(255,255,255,.035); }
-  .modal-head .status.conflict { color: #fecaca; background: rgba(251,113,133,.12); border: 1px solid rgba(251,113,133,.25); }
-  pre.log {
-    margin: 0; padding: 18px 20px; overflow: auto; flex: 1; white-space: pre-wrap;
-    background: #080c14; font: 12px/1.65 "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-    color: #b8c3d6; scrollbar-color: #283247 transparent;
-  }
-  .sudo { padding: 12px 16px; border-top: 1px solid var(--line); display: none; gap: 8px; }
-  .sudo input {
-    flex: 1; background: var(--surface-raised); border: 1px solid var(--line);
-    color: var(--text); border-radius: 10px; padding: 9px 11px; outline: none;
-  }
-  .sudo input:focus { border-color: rgba(129,140,248,.48); box-shadow: 0 0 0 3px rgba(129,140,248,.08); }
-  .muted { color: var(--muted); }
-  .stamp { font-size: 11px; color: #65738a; font-variant-numeric: tabular-nums; }
-  .loading {
-    min-height: 55vh; display: grid; place-items: center; color: var(--muted);
-  }
-  .spinner { width: 22px; height: 22px; border: 2px solid var(--line-bright); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  @keyframes fade { from { opacity: 0; } }
-  @keyframes rise { from { opacity: 0; transform: translateY(10px) scale(.99); } }
-  @media (max-width: 850px) {
-    header { padding: 10px 16px; gap: 12px; flex-wrap: wrap; }
-    .counts { order: 3; width: 100%; overflow-x: auto; padding-bottom: 2px; }
-    .stamp { display: none; }
-    main { padding: 18px 14px 50px; }
-    .grid { grid-template-columns: 1fr; }
-  }
-  @media (max-width: 480px) {
-    .eyebrow, .toggle span { display: none; }
-    .brand-icon { width: 34px; height: 34px; }
-    .card { border-radius: 15px; padding: 15px; }
-    .counts span { padding: 5px 8px; }
-  }
-</style>
+<link rel="icon" type="image/png" href="/static/favicon.png?v=2" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" />
+<link rel="stylesheet" href="/static/indra.css?v=4" />
 </head>
 <body>
-<header>
-  <div class="brand">
-    <img class="brand-icon" src="/static/favicon.png?v=2" alt="Indra eye" />
-    <div class="brand-copy">
-      <h1>Indra</h1>
-      <span class="eyebrow">Operations Console</span>
-    </div>
-  </div>
-  <div class="counts" id="counts"></div>
-  <div class="spacer"></div>
-  <span class="stamp" id="stamp"></span>
-  <label class="toggle"><input type="checkbox" id="auto" checked /><span>Live</span></label>
-  <button class="btn server game" id="gameMode" title="On while a Steam game is running. Click to close the game. Steam stays open." disabled>Game mode</button>
-  <button class="btn server stop" id="stopAll" title="Stop every hosted app and Kubernetes">■ Stop all</button>
-  <button class="btn server start" id="startAll" title="Start Kubernetes first, then every hosted app">▶ Start all</button>
-  <button class="btn" id="refresh">↻ Refresh</button>
-</header>
-<main id="main"><div class="loading"><div class="spinner"></div></div></main>
+<div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
 
-<div class="overlay" id="overlay">
-  <div class="modal">
-    <div class="modal-head">
-      <strong id="m-title">Job</strong>
-      <span class="status" id="m-status"></span>
-      <div class="spacer" style="flex:1"></div>
-      <button class="btn small" id="m-close">Close</button>
+<header class="top">
+  <a class="brand" href="/" title="Indra">
+    <img src="/static/brand/indra.png?v=1" alt="" />
+    <span><b>Indra</b><small>Operations console</small></span>
+  </a>
+  <label class="search" title="Search (/)">
+    <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+    <input id="q" type="search" placeholder="Search apps, containers, ports, domains…" autocomplete="off" spellcheck="false" aria-label="Search" />
+    <kbd>/</kbd>
+  </label>
+  <div class="top-right">
+    <button class="live on" id="liveBtn" type="button" title="Auto-refresh every 10 seconds. Click to pause.">
+      <i class="led"></i><span id="liveText">Live</span>
+    </button>
+    <button class="btn icon" id="refreshBtn" type="button" title="Refresh now (R)" aria-label="Refresh">
+      <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+    </button>
+  </div>
+</header>
+
+<div class="banner" id="banner" hidden></div>
+
+<main>
+  <section class="hero first" id="hero">
+    <div class="skel"></div><div class="skel"></div><div class="skel"></div>
+  </section>
+  <nav class="tabs" id="tabs" aria-label="Filter"></nav>
+  <div id="sections">
+    <div class="section"><div class="grid"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div></div>
+  </div>
+  <div class="no-results" id="noResults" hidden></div>
+</main>
+
+<div class="dock" id="dock" aria-label="Running jobs"></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<!-- Job console: build / deploy / pull output and logs -->
+<div class="scrim" id="conScrim" hidden>
+  <section class="console" id="console" role="dialog" aria-modal="true" aria-labelledby="conTitle">
+    <header class="con-head">
+      <span id="conBadge"></span>
+      <div class="con-title"><h2 id="conTitle">Job</h2><p id="conSub"></p></div>
+      <span class="status-pill" id="conStatus"></span>
+      <button class="btn icon ghost" id="conMax" type="button" title="Expand" aria-label="Expand"></button>
+      <button class="btn icon ghost" id="conClose" type="button" title="Close (Esc)" aria-label="Close"></button>
+    </header>
+    <div class="con-tools">
+      <label class="con-search">
+        <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>
+        <input id="conQ" type="search" placeholder="Filter lines…" autocomplete="off" spellcheck="false" aria-label="Filter lines" />
+        <span class="hits" id="conHits"></span>
+      </label>
+      <div class="con-logs" id="conLogTools" hidden>
+        <select id="conCount" aria-label="Lines">
+          <option value="120">Last 120 lines</option>
+          <option value="500">Last 500 lines</option>
+          <option value="1000">Last 1000 lines</option>
+          <option value="2000">Last 2000 lines</option>
+        </select>
+        <button class="btn" id="conReload" type="button"></button>
+        <button class="tog" id="conTail" type="button" aria-pressed="false" title="Reload the logs every 5 seconds"><i class="led"></i>Live tail</button>
+      </div>
+      <span class="grow"></span>
+      <button class="tog" id="conWrap" type="button" aria-pressed="true" title="Wrap long lines"></button>
+      <button class="tog" id="conFollow" type="button" aria-pressed="true" title="Keep scrolled to the newest output"></button>
+      <button class="btn icon" id="conCopy" type="button" title="Copy output" aria-label="Copy output"></button>
+      <button class="btn icon" id="conDl" type="button" title="Download as .log" aria-label="Download"></button>
     </div>
-    <pre class="log" id="m-log"></pre>
-    <div class="sudo" id="m-confirm">
-      <span class="confirm-note" id="m-confirm-note"></span>
-      <button class="btn" id="m-cancel">Cancel</button>
-      <button class="btn" id="m-go">Confirm</button>
+    <div class="con-body">
+      <div class="con-out" id="conOut"></div>
+      <div class="con-empty" id="conEmpty" hidden><div class="bars"><i></i><i></i><i></i><i></i></div><span>Waiting for output…</span></div>
+      <button class="btn primary sm jump" id="conJump" type="button" hidden></button>
     </div>
-    <div class="sudo" id="m-sudo">
-      <input type="password" id="m-pw" placeholder="sudo password (used once, not stored)" />
-      <button class="btn" id="m-run">Run deploy</button>
+    <footer class="con-foot">
+      <div class="meta" id="conMeta"></div>
+      <span class="grow"></span>
+      <button class="btn" id="conHide" type="button">Close</button>
+    </footer>
+  </section>
+</div>
+
+<!-- Confirm popup -->
+<div class="scrim" id="dlgScrim" hidden>
+  <div class="dialog primary" id="dlg" role="alertdialog" aria-modal="true" aria-labelledby="dlgTitle">
+    <div class="dlg-icon" id="dlgIcon"></div>
+    <h2 id="dlgTitle"></h2>
+    <div class="dlg-body" id="dlgBody"></div>
+    <label class="dlg-pw" id="dlgPwWrap" hidden>
+      <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      <input type="password" id="dlgPw" placeholder="sudo password (optional — used once, never stored)" autocomplete="off" />
+    </label>
+    <div class="dlg-actions">
+      <span class="dlg-note" id="dlgNote"></span>
+      <button class="btn lg" id="dlgCancel" type="button">Cancel</button>
+      <button class="btn lg primary" id="dlgOk" type="button">Confirm</button>
     </div>
   </div>
 </div>
 
-<script>
-const $ = (s, r = document) => r.querySelector(s);
-let pendingDeploy = null;
-/** "stop_all" | "start_all" waiting for the Confirm button */
-let pendingServerAction = null;
-/** true while the Game mode confirm is waiting to close a running Steam game */
-let pendingGameClose = false;
-let gameBusy = false;
-
-const serverActions = {
-  stop_all: {
-    title: "Stop all",
-    running: "stopping…",
-    text:
-      "This stops everything hosted on this machine:\n\n" +
-      "  • Apeksha, Habit Tracker, Video2X (and its AI model server)\n" +
-      "  • Jellyfin, Immich, Nextcloud, Transmission\n" +
-      "  • Kubernetes: Argo CD, Link It Up, Saral\n\n" +
-      "Left running: Indra (this page), nginx, Docker, Sunshine and Steam.\n" +
-      "Games are not touched. Stopped apps stay stopped after a reboot\n" +
-      "until you press Start all.\n\n" +
-      "Runs: bash ~/Desktop/deploy.sh 9",
-    note: "Sites will go offline.",
-  },
-  start_all: {
-    title: "Start all",
-    running: "starting…",
-    text:
-      "This brings everything back, in this order:\n\n" +
-      "  1. Kubernetes (Argo CD, Link It Up, Saral) - first, so apps that need it find it up\n" +
-      "  2. Apeksha, Habit Tracker\n" +
-      "  3. Jellyfin, Immich, Nextcloud, Transmission\n" +
-      "  4. Video2X\n\n" +
-      "It is the normal deploy, so it also rebuilds anything whose code changed.\n" +
-      "It can take several minutes. Indra itself is not restarted.\n\n" +
-      "Runs: bash ~/Desktop/deploy.sh 1,2,3,7,8",
-    note: "Running apps are restarted.",
-  },
-};
-/** project id -> "rebuild" | "restart" after a pull brought new commits */
-const suggestedAfterPull = {};
-/** last /api/status payload — used after pull to pick rebuild vs restart */
-let lastStatus = null;
-
-const healthLabel = { up: "all up", down: "down", partial: "partial", monitor: "monitor" };
-
-async function api(path, opts) {
-  const r = await fetch(path, opts);
-  if (!r.ok) throw new Error((await r.text()) || r.status);
-  return r.json();
-}
-
-function portPills(ports) {
-  return (ports || []).map(p =>
-    `<span class="pill ${p.open ? "ok" : "bad"}">${p.port}·${p.label}</span>`
-  ).join("");
-}
-function procPills(map, upVal) {
-  return Object.entries(map || {}).map(([n, s]) =>
-    `<span class="pill ${s === upVal ? "ok" : (s === "missing" ? "" : "bad")}">${n}: ${s}</span>`
-  ).join("");
-}
-function domRows(domains) {
-  return (domains || []).map(d => {
-    const cls = d.code && d.code < 400 ? "ok" : "bad";
-    const code = d.code === null ? "down" : d.code;
-    const host = d.url.replace(/^https?:\/\//, "");
-    return `<a class="dom" href="${d.url}" target="_blank">${host}</a> <span class="pill ${cls}">${code}</span>`;
-  }).join(" ");
-}
-
-function card(p) {
-  const acts = [];
-  const controllable = Object.keys(p.pm2 || {}).length || p.has_docker;
-  const suggest = suggestedAfterPull[p.id];
-
-  if (p.has_git)
-    acts.push(`<button class="btn small" data-a="pull" data-p="${p.id}">Pull</button>`);
-
-  if (controllable) {
-    const restartCls = suggest === "restart" && !p.has_rebuild ? " suggested" : "";
-    acts.push(`<button class="btn small${restartCls}" data-a="restart" data-p="${p.id}">Restart</button>`);
-    if (p.has_rebuild) {
-      const rebuildCls = suggest === "rebuild" ? " suggested" : "";
-      acts.push(`<button class="btn small${rebuildCls}" data-a="rebuild" data-p="${p.id}">Rebuild</button>`);
-    }
-    acts.push(`<button class="btn small" data-a="logs" data-p="${p.id}">Logs</button>`);
-    acts.push(`<button class="btn small" data-a="stop" data-p="${p.id}">Stop</button>`);
-    acts.push(`<button class="btn small" data-a="start" data-p="${p.id}">Start</button>`);
-  }
-  if (p.deploy)
-    acts.push(`<button class="btn small" data-a="deploy" data-p="${p.id}">Deploy</button>`);
-
-  const pullHint = suggest
-    ? `<div class="pull-hint">Updates pulled — use ${suggest === "rebuild" ? "Rebuild" : "Restart"} to apply them.</div>`
-    : "";
-
-  const rows = [];
-  if (Object.keys(p.pm2 || {}).length)
-    rows.push(`<div class="row"><span class="lbl">pm2</span>${procPills(p.pm2, "online")}</div>`);
-  if (p.has_docker)
-    rows.push(`<div class="row"><span class="lbl">docker</span>${procPills(p.docker, "running") || '<span class="muted">compose</span>'}</div>`);
-  if (p.ports && p.ports.length)
-    rows.push(`<div class="row"><span class="lbl">ports</span>${portPills(p.ports)}</div>`);
-  if (p.domains && p.domains.length)
-    rows.push(`<div class="row"><span class="lbl">web</span>${domRows(p.domains)}</div>`);
-  if (p.notes)
-    rows.push(`<div class="row muted">${p.notes}</div>`);
-
-  return `<div class="card">
-    <div class="card-head">
-      <span class="dot ${p.health}" title="${healthLabel[p.health]}"></span>
-      <h3>${p.name}</h3><span class="cat">${p.category}</span>
-    </div>
-    <div class="rows">${rows.join("")}</div>
-    ${pullHint}
-    <div class="actions">${acts.join("")}</div>
-  </div>`;
-}
-
-function esc(s) {
-  return String(s ?? "").replace(/[&<>"']/g, c => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  }[c]));
-}
-
-function argoCard(a) {
-  const syncCls = a.sync === "Synced" ? "ok" : "warn";
-  const healthCls = a.health === "Healthy" ? "ok" : (a.state === "down" ? "bad" : "warn");
-  const urls = (a.urls || []).map(u =>
-    `<a class="dom" href="${esc(u)}" target="_blank" rel="noopener">${esc(u.replace(/^https?:\/\//, ""))}</a>`
-  ).join(" ");
-  const rows = [
-    `<div class="row"><span class="lbl">sync</span><span class="pill ${syncCls}">${esc(a.sync)}</span></div>`,
-    `<div class="row"><span class="lbl">health</span><span class="pill ${healthCls}">${esc(a.health)}</span></div>`,
-  ];
-  if (a.path)
-    rows.push(`<div class="row"><span class="lbl">path</span><span class="pill">${esc(a.path)}</span></div>`);
-  if (a.revision)
-    rows.push(`<div class="row"><span class="lbl">rev</span><span class="pill">${esc(a.revision)}</span></div>`);
-  if (urls)
-    rows.push(`<div class="row"><span class="lbl">web</span>${urls}</div>`);
-  return `<div class="card">
-    <div class="card-head">
-      <span class="dot ${esc(a.state)}" title="${esc(a.sync)} · ${esc(a.health)}"></span>
-      <h3>${esc(a.name)}</h3><span class="cat">argo</span>
-    </div>
-    <div class="rows">${rows.join("")}</div>
-  </div>`;
-}
-
-function infraCard(i) {
-  const rows = [];
-  if ("active" in i) {
-    const state = i.state || (i.active ? "active" : "inactive");
-    rows.push(`<div class="row"><span class="lbl">service</span><span class="pill ${i.active ? "ok" : "bad"}">${esc(state)}</span></div>`);
-  }
-  if (i.ports)
-    rows.push(`<div class="row"><span class="lbl">ports</span>${portPills(i.ports)}</div>`);
-  const ok = ("active" in i ? i.active : true) &&
-    (i.ports ? i.ports.some(p => p.open) : true);
-  const acts = i.control
-    ? ["start", "restart", "stop"].map(a =>
-        `<button class="btn small" data-ia="${a}" data-i="${i.id}" data-n="${esc(i.name)}">${a[0].toUpperCase() + a.slice(1)}</button>`)
-    : [];
-  return `<div class="card">
-    <div class="card-head"><span class="dot ${ok ? "up" : "down"}"></span>
-      <h3>${i.name}</h3><span class="cat">infra</span></div>
-    <div class="rows">${rows.join("")}</div>
-    ${acts.length ? `<div class="actions">${acts.join("")}</div>` : ""}</div>`;
-}
-
-async function render() {
-  try {
-    const d = await api("/api/status");
-    lastStatus = d;
-    const cats = { "web-app": [], "self-hosted": [], "lan-device": [] };
-    d.projects.forEach(p => (cats[p.category] || (cats[p.category] = [])).push(p));
-
-    const argoApps = (d.argo && d.argo.apps) || [];
-    let up = 0, down = 0, part = 0;
-    d.projects.forEach(p => {
-      if (p.health === "up") up++;
-      else if (p.health === "down") down++;
-      else if (p.health === "partial") part++;
-    });
-    argoApps.forEach(a => {
-      if (a.state === "up") up++;
-      else if (a.state === "down") down++;
-      else part++;
-    });
-    $("#counts").innerHTML =
-      `<span><b>${up}</b> up</span><span><b>${part}</b> partial</span>` +
-      `<span><b>${down}</b> down</span><span><b>${d.projects.length}</b> projects</span>`;
-    $("#stamp").textContent = "updated " + new Date(d.ts * 1000).toLocaleTimeString();
-
-    const titles = { "web-app": "Web Apps", "self-hosted": "Self-Hosted", "lan-device": "LAN Devices" };
-    let html = "";
-    for (const key of ["web-app", "self-hosted", "lan-device"]) {
-      if (!cats[key] || !cats[key].length) continue;
-      html += `<div class="section-title">${titles[key]}</div><div class="grid">` +
-        cats[key].map(card).join("") + `</div>`;
-    }
-    const argoHead = `<div class="section-row"><div class="section-title">Argo CD</div><a class="btn small" href="/argocd/">Manage</a></div>`;
-    if (d.argo && d.argo.ok && argoApps.length) {
-      html += argoHead + `<div class="grid">` +
-        argoApps.map(argoCard).join("") + `</div>`;
-    } else if (d.argo && d.argo.stopped) {
-      html += `<div class="section-title">Argo CD</div><div class="grid"><div class="card">
-        <div class="card-head"><span class="dot down"></span><h3>Kubernetes is stopped</h3><span class="cat">k3s</span></div>
-        <div class="rows"><div class="row muted">Argo CD, Link It Up and Saral are off. Press “Start all” at the top to bring them back.</div></div>
-      </div></div>`;
-    } else if (d.argo && !d.argo.ok) {
-      html += argoHead + `<div class="grid"><div class="card">
-        <div class="card-head"><span class="dot down"></span><h3>Argo CD</h3><span class="cat">argo</span></div>
-        <div class="rows"><div class="row muted">${esc((d.argo.error || "unreachable").split("\n").slice(-1)[0])}</div></div>
-      </div></div>`;
-    }
-    syncServerButtons(d.server);
-    syncGameButton(d.games || []);
-    if (d.infra && d.infra.length)
-      html += `<div class="section-title">Infrastructure</div><div class="grid">` +
-        d.infra.map(infraCard).join("") + `</div>`;
-    $("#main").innerHTML = html;
-
-    $("#main").querySelectorAll("button[data-a]").forEach(b =>
-      b.addEventListener("click", () => onAction(b.dataset.p, b.dataset.a)));
-    $("#main").querySelectorAll("button[data-ia]").forEach(b =>
-      b.addEventListener("click", () => onInfraAction(b.dataset.i, b.dataset.ia, b.dataset.n)));
-  } catch (e) {
-    $("#main").innerHTML = `<p class="pill bad">Error: ${e.message}</p>`;
-  }
-}
-
-/** Disable the header buttons while a stop/start job runs (also when another tab started it). */
-function syncServerButtons(server) {
-  const busy = !!(server && server.running);
-  $("#stopAll").disabled = busy;
-  $("#startAll").disabled = busy;
-  $("#stopAll").textContent = busy && server.running.action === "stop_all" ? "■ Stopping…" : "■ Stop all";
-  $("#startAll").textContent = busy && server.running.action === "start_all" ? "▶ Starting…" : "▶ Start all";
-}
-
-function syncGameButton(games) {
-  const btn = $("#gameMode");
-  const running = (games || []).filter(g => g && g.name);
-  btn.classList.toggle("on", running.length > 0);
-  btn.disabled = gameBusy || running.length === 0;
-  if (gameBusy) {
-    btn.textContent = "Game mode · closing…";
-    return;
-  }
-  if (running.length) {
-    const names = running.map(g => g.name).join(", ");
-    btn.textContent = "Game mode · on";
-    btn.title = names + " is running. Click to close the game. Steam stays open.";
-  } else {
-    btn.textContent = "Game mode";
-    btn.title = "No Steam game is running.";
-  }
-}
-
-function askCloseGame() {
-  const games = ((lastStatus && lastStatus.games) || []).filter(g => g && g.name);
-  if (!games.length || gameBusy) return;
-  const names = games.map(g => g.name);
-  openModal("Game mode");
-  $("#m-log").textContent =
-    (names.length === 1
-      ? names[0] + " is running.\n\n"
-      : "These games are running:\n\n" + names.map(n => "  • " + n).join("\n") + "\n\n") +
-    "End the game now? It is closed so it can save.\n" +
-    "Steam stays open. This does not start a game.";
-  $("#m-confirm-note").textContent = "Steam stays open.";
-  $("#m-go").textContent = "End game";
-  $("#m-confirm").style.display = "flex";
-  pendingGameClose = true;
-}
-
-async function runCloseGame() {
-  if (!pendingGameClose) return;
-  pendingGameClose = false;
-  $("#m-confirm").style.display = "none";
-  $("#m-log").textContent = "";
-  $("#m-status").textContent = "closing…";
-  gameBusy = true;
-  syncGameButton((lastStatus && lastStatus.games) || []);
-  try {
-    const res = await api("/api/games/stop", { method: "POST" });
-    $("#m-log").textContent = res.log || "Closed.";
-    $("#m-status").textContent = (res.closed || []).length ? "✓ done" : "no game";
-  } catch (e) {
-    $("#m-log").textContent = e.message;
-    $("#m-status").textContent = "failed";
-  }
-  gameBusy = false;
-  render();
-}
-
-function askServerAction(action) {
-  const meta = serverActions[action];
-  openModal(`Server · ${meta.title}`);
-  $("#m-log").textContent = meta.text;
-  $("#m-confirm-note").textContent = meta.note;
-  $("#m-go").textContent = meta.title;
-  $("#m-confirm").style.display = "flex";
-  pendingServerAction = action;
-}
-
-async function runServerAction() {
-  const action = pendingServerAction;
-  if (!action) return;
-  pendingServerAction = null;
-  $("#m-confirm").style.display = "none";
-  $("#m-log").textContent = "";
-  $("#m-status").textContent = serverActions[action].running;
-  syncServerButtons({ running: { action } });
-  try {
-    const { job } = await api("/api/server", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action }),
-    });
-    await poll(job, "server", action);
-  } catch (e) {
-    $("#m-log").textContent += "\n[error] " + e.message;
-    $("#m-status").textContent = "failed";
-    render();
-  }
-}
-
-function openModal(title) {
-  $("#m-title").textContent = title;
-  $("#m-log").textContent = "";
-  $("#m-status").textContent = "";
-  $("#m-status").classList.remove("conflict");
-  $("#m-sudo").style.display = "none";
-  $("#m-confirm").style.display = "none";
-  pendingServerAction = null;
-  pendingGameClose = false;
-  $("#overlay").classList.add("show");
-}
-function closeModal() {
-  $("#overlay").classList.remove("show");
-  pendingDeploy = null;
-  pendingServerAction = null;
-  pendingGameClose = false;
-}
-
-async function onAction(project, action) {
-  if (action === "rebuild" || action === "restart")
-    delete suggestedAfterPull[project];
-
-  openModal(`${project} · ${action}`);
-  if (action === "deploy") {
-    $("#m-log").textContent =
-      "Deploy runs the project's deploy.sh (nginx/SSL, needs sudo).\n" +
-      "It first tries passwordless sudo. If your sudo needs a password,\n" +
-      "enter it below (used once, not stored) — requires ALLOW_SUDO_PASSWORD=1.\n";
-    $("#m-sudo").style.display = "flex";
-    pendingDeploy = project;
-    return;
-  }
-  await startJob(project, action, null);
-}
-
-async function onInfraAction(id, action, name) {
-  openModal(`${name} · ${action}`);
-  $("#m-status").textContent = "running…";
-  try {
-    const { job } = await api("/api/infra", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, action }),
-    });
-    await poll(job, "infra:" + id, action);
-  } catch (e) {
-    $("#m-log").textContent += "\n[error] " + e.message;
-    $("#m-status").textContent = "failed";
-  }
-}
-
-async function startJob(project, action, sudo_password) {
-  $("#m-status").textContent = "running…";
-  try {
-    const { job } = await api("/api/action", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ project, action, sudo_password }),
-    });
-    await poll(job, project, action);
-  } catch (e) {
-    $("#m-log").textContent += "\n[error] " + e.message;
-    $("#m-status").textContent = "failed";
-  }
-}
-
-async function poll(job, project, action) {
-  const log = $("#m-log");
-  while (true) {
-    const j = await api("/api/jobs/" + job);
-    log.textContent = j.output || "";
-    log.scrollTop = log.scrollHeight;
-    if (j.done) {
-      const statusEl = $("#m-status");
-      statusEl.classList.remove("conflict");
-      if (j.conflicts) {
-        statusEl.textContent = "⚠ merge conflicts";
-        statusEl.classList.add("conflict");
-      } else {
-        statusEl.textContent = j.rc === 0 ? "✓ done" : `✗ exit ${j.rc}`;
-      }
-      if (action === "pull" && j.updated && !j.conflicts && !j.applied) {
-        const proj = (lastStatus?.projects || []).find(p => p.id === project);
-        suggestedAfterPull[project] = proj?.has_rebuild ? "rebuild" : "restart";
-      }
-      render();
-      break;
-    }
-    await new Promise(r => setTimeout(r, 700));
-  }
-}
-
-$("#refresh").addEventListener("click", render);
-$("#gameMode").addEventListener("click", askCloseGame);
-$("#stopAll").addEventListener("click", () => askServerAction("stop_all"));
-$("#startAll").addEventListener("click", () => askServerAction("start_all"));
-$("#m-go").addEventListener("click", () => {
-  if (pendingGameClose) runCloseGame();
-  else runServerAction();
-});
-$("#m-cancel").addEventListener("click", closeModal);
-$("#m-close").addEventListener("click", closeModal);
-$("#overlay").addEventListener("click", e => { if (e.target.id === "overlay") closeModal(); });
-$("#m-run").addEventListener("click", () => {
-  if (pendingDeploy) { $("#m-sudo").style.display = "none"; startJob(pendingDeploy, "deploy", $("#m-pw").value); }
-});
-
-let timer = null;
-function loop() { if ($("#auto").checked) render(); }
-$("#auto").addEventListener("change", () => {
-  clearInterval(timer);
-  if ($("#auto").checked) timer = setInterval(loop, 10000);
-});
-timer = setInterval(loop, 10000);
-render();
-</script>
+<script src="/static/simpleIcons.js?v=1"></script>
+<script src="/static/indra.js?v=4"></script>
 </body>
 </html>
